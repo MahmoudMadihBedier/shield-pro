@@ -103,3 +103,37 @@ Rules below only cover things that OVERRIDE defaults or encode project decisions
 - Dispose controllers and focus nodes in `StatefulWidget.dispose()`
 - Prefer small, composed widgets to minimize rebuild scope
 - Use `BlocBuilder`/`BlocSelector` on the smallest widget that needs the state — never at the top of the tree
+
+---
+
+# Section C — Supabase Configuration
+
+## Project Details
+- **Project URL**: https://viqgnjxujcwluqrxqivh.supabase.co
+- **Project Ref**: viqgnjxujcwluqrxqivh
+
+## Authentication
+- **Publishable Key**: sb_publishable_EPJSz4pR7sRR3e2tCUJKUg_B31EVOli
+
+## Database
+- **Direct Connection String**: postgresql://postgres:LOLAmahmoud@db.viqgnjxujcwluqrxqivh.supabase.co:5432/postgres
+
+## Environment Variables
+Store these in `.env.local` (already configured):
+```
+VITE_SUPABASE_URL=https://viqgnjxujcwluqrxqivh.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_EPJSz4pR7sRR3e2tCUJKUg_B31EVOli
+```
+
+## CLI Setup Commands
+```bash
+supabase login
+supabase init
+supabase link --project-ref viqgnjxujcwluqrxqivh
+```
+
+## Supabase Client Usage
+- Supabase client is initialized in `src/lib/supabase.ts`
+- Import and use: `import { supabase } from '@/lib/supabase'`
+- All data layer operations use the supabase client
+- Authentication flows use Supabase Auth methods
