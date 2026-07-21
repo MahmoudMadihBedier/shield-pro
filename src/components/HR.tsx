@@ -264,7 +264,7 @@ export const HR: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الراتب الأساسي شهرياً (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">الراتب الأساسي شهرياً (ج.م)</label>
                 <input
                   type="number"
                   required
@@ -324,10 +324,10 @@ export const HR: React.FC = () => {
                     <tr key={emp.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 font-bold text-gray-800">{emp.name}</td>
                       <td className="py-3 px-4 text-gray-600">{emp.role}</td>
-                      <td className="py-3 px-4 text-center font-mono">{emp.base_salary} ر.س</td>
-                      <td className="py-3 px-4 text-center font-mono">+{emp.allowances} ر.س</td>
+                      <td className="py-3 px-4 text-center font-mono">{emp.base_salary} ج.م</td>
+                      <td className="py-3 px-4 text-center font-mono">+{emp.allowances} ج.م</td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-blue-600">
-                        {Number(emp.base_salary) + Number(emp.allowances) - Number(emp.deductions)} ر.س
+                        {Number(emp.base_salary) + Number(emp.allowances) - Number(emp.deductions)} ج.م
                       </td>
                     </tr>
                   ))}
@@ -489,9 +489,9 @@ export const HR: React.FC = () => {
                       <tr key={pr.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{empName}</td>
                         <td className="py-3 px-4 font-bold font-mono text-gray-700">{pr.month}</td>
-                        <td className="py-3 px-4 text-center font-mono">{pr.base} ر.س</td>
+                        <td className="py-3 px-4 text-center font-mono">{pr.base} ج.م</td>
                         <td className="py-3 px-4 text-center font-mono">+{pr.allowances} / -{pr.deductions}</td>
-                        <td className="py-3 px-4 text-center font-mono font-bold text-green-600">{pr.net_pay} ر.س</td>
+                        <td className="py-3 px-4 text-center font-mono font-bold text-green-600">{pr.net_pay} ج.م</td>
                         <td className="py-3 px-4 text-center">
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             <CheckCircle className="h-3 w-3" />

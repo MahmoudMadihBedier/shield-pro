@@ -271,7 +271,7 @@ export const Accounting: React.FC = () => {
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-green-600">رأس المال الفعلي الجاري (Liquidity)</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{totalCapital.toFixed(2)} ر.س</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{totalCapital.toFixed(2)} ج.م</div>
               </div>
               <div className="text-[10px] text-gray-400 mt-4">
                 الحسبة: صندوق الكاش + البنوك + مستحقات العملاء + قيمة البضاعة التامة والخامات - مستحقات الموردين + الاصول الثابتة
@@ -281,21 +281,21 @@ export const Accounting: React.FC = () => {
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-blue-600">السيولة النقدية المتاحة (Cash & Bank)</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{(cash + bank).toFixed(2)} ر.س</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{(cash + bank).toFixed(2)} ج.م</div>
               </div>
               <div className="flex gap-4 mt-4 text-[10px] text-gray-500">
-                <span>الكاش: {cash.toFixed(2)} ر.س</span>
-                <span>البنك: {bank.toFixed(2)} ر.س</span>
+                <span>الكاش: {cash.toFixed(2)} ج.م</span>
+                <span>البنك: {bank.toFixed(2)} ج.م</span>
               </div>
             </div>
 
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-yellow-600">الذمم المالية والمديونيات الخارجية</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{(ar - ap).toFixed(2)} ر.س</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{(ar - ap).toFixed(2)} ج.م</div>
               </div>
               <div className="flex gap-4 mt-4 text-[10px] text-gray-500">
-                <span className="text-green-600">مستحقات لنا: {ar.toFixed(2)} ر.س</span>
+                <span className="text-green-600">مستحقات لنا: {ar.toFixed(2)} ج.م</span>
                 <span className="text-red-600">مستحقات للموردين: {ap.toFixed(2)} ر.s</span>
               </div>
             </div>
@@ -308,7 +308,7 @@ export const Accounting: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">قيمة مخزون المستودعات (تقديرية):</span>
-                  <span className="font-mono font-bold text-gray-900">{invVal.toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-gray-900">{invVal.toFixed(2)} ج.م</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">قيمة الأصول الثابتة والأجهزة:</span>
@@ -316,17 +316,17 @@ export const Accounting: React.FC = () => {
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">إجمالي الموجودات (الأصول والسيولة):</span>
-                  <span className="font-mono font-bold text-green-600">{(cash + bank + ar + invVal + fixed).toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-green-600">{(cash + bank + ar + invVal + fixed).toFixed(2)} ج.م</span>
                 </div>
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">إجمالي الالتزامات والخصوم (الموردون):</span>
-                  <span className="font-mono font-bold text-red-600">{ap.toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-red-600">{ap.toFixed(2)} ج.م</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">رأس المال الفعلي (Net Assets):</span>
-                  <span className="font-mono font-bold text-blue-600">{totalCapital.toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-blue-600">{totalCapital.toFixed(2)} ج.م</span>
                 </div>
               </div>
             </div>
@@ -369,7 +369,7 @@ export const Accounting: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المالي (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المالي (ج.م)</label>
                 <input
                   type="number"
                   min="0.1"
@@ -421,7 +421,7 @@ export const Accounting: React.FC = () => {
                     return (
                       <tr key={e.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-semibold text-gray-800">{catName}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-red-600">{e.amount} ر.س</td>
+                        <td className="py-3 px-4 font-mono font-bold text-red-600">{e.amount} ج.م</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{e.notes || '-'}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">{new Date(e.date).toLocaleDateString('ar-EG')}</td>
@@ -454,7 +454,7 @@ export const Accounting: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">القيمة المادية التقديرية للأصل (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">القيمة المادية التقديرية للأصل (ج.م)</label>
                 <input
                   type="number"
                   min="1"
@@ -508,7 +508,7 @@ export const Accounting: React.FC = () => {
                   {fixedAssets.map(a => (
                     <tr key={a.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 font-bold text-gray-800">{a.name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-gray-900">{a.value} ر.س</td>
+                      <td className="py-3 px-4 font-mono font-bold text-gray-900">{a.value} ج.م</td>
                       <td className="py-3 px-4 text-gray-600">{a.depreciation_rate}% سنوياً</td>
                       <td className="py-3 px-4 text-gray-500 text-xs">{new Date(a.purchase_date).toLocaleDateString('ar-EG')}</td>
                     </tr>

@@ -453,7 +453,7 @@ export const Inventory: React.FC = () => {
                         <td className="py-3 px-4 text-gray-600">{uomName}</td>
                         <td className="py-3 px-4 text-center font-bold text-lg text-gray-900">{stock}</td>
                         <td className="py-3 px-4 text-gray-600">{item.reorder_level}</td>
-                        <td className="py-3 px-4 font-mono">{item.default_price} ر.س</td>
+                        <td className="py-3 px-4 font-mono">{item.default_price} ج.م</td>
                         <td className="py-3 px-4 text-center">
                           {isLow ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800">

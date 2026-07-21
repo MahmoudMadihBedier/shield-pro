@@ -26,11 +26,12 @@ export const Settings: React.FC = () => {
   const [companyTaxNo, setCompanyTaxNo] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [vatEnabled, setVatEnabled] = useState(false);
-  const [vatPct, setVatPct] = useState('15');
+  const [vatPct, setVatPct] = useState('14');
   const [printSize, setPrintSize] = useState('A4');
   const [discountLinesEnabled, setDiscountLinesEnabled] = useState(true);
   const [reorderAlertsEnabled, setReorderAlertsEnabled] = useState(true);
   const [expiryTrackingEnabled, setExpiryTrackingEnabled] = useState(false);
+  const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState('0.5');
 
   // Roles & Permissions state
   const [roles, setRoles] = useState<any[]>([]);
@@ -62,15 +63,16 @@ export const Settings: React.FC = () => {
 
   const loadGeneralSettings = async () => {
     setCompanyName(await getSetting('company_name', 'مؤسسة لواصق الإطارات الفورية'));
-    setCompanyTaxNo(await getSetting('company_tax_no', '300012345600003'));
-    setCompanyAddress(await getSetting('company_address', 'الرياض، المملكة العربية السعودية'));
+    setCompanyTaxNo(await getSetting('company_tax_no', '123-456-789'));
+    setCompanyAddress(await getSetting('company_address', 'القاهرة، جمهورية مصر العربية'));
     setVatEnabled((await getSetting('vat_enabled')) === 'true');
-    setVatPct(await getSetting('default_vat_pct', '15'));
+    setVatPct(await getSetting('default_vat_pct', '14'));
     setPrintSize(await getSetting('print_size', 'A4'));
     setDiscountLinesEnabled((await getSetting('discount_lines_enabled', 'true')) === 'true');
     setReorderAlertsEnabled((await getSetting('reorder_alerts_enabled', 'true')) === 'true');
     setExpiryTrackingEnabled((await getSetting('expiry_tracking_enabled', 'false')) === 'true');
     setMultiWarehouseEnabled((await getSetting('multi_warehouse_enabled', 'false')) === 'true');
+    setLaborOverheadPerUnit(await getSetting('labor_overhead_per_unit', '0.5'));
   };
 
   const loadRolesAndPermissions = async () => {
@@ -111,6 +113,7 @@ export const Settings: React.FC = () => {
       await saveSetting('reorder_alerts_enabled', String(reorderAlertsEnabled));
       await saveSetting('expiry_tracking_enabled', String(expiryTrackingEnabled));
       await saveSetting('multi_warehouse_enabled', String(multiWarehouseEnabled));
+      await saveSetting('labor_overhead_per_unit', laborOverheadPerUnit);
 
       showNotification('success', 'تم حفظ الإعدادات العامة بنجاح!');
     } catch (err: any) {
@@ -368,6 +371,19 @@ export const Settings: React.FC = () => {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700">تكلفة العمالة والتشغيل لكل وحدة (ج.م)</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={laborOverheadPerUnit}
+                  onChange={(e) => setLaborOverheadPerUnit(e.target.value)}
+                  className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left"
+                />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700">حجم الطباعة الافتراضي للفواتير</label>
                 <select
                   value={printSize}
@@ -580,7 +596,7 @@ export const Settings: React.FC = () => {
                 <label className="block text-xs font-bold text-gray-600 mb-1">الموقع / العنوان</label>
                 <input
                   type="text"
-                  placeholder="جدة، المنطقة الصناعية الثانية"
+                  placeholder="القاهرة، المنطقة الصناعية"
                   value={newWhLoc}
                   onChange={(e) => setNewWhLoc(e.target.value)}
                   className="w-full rounded-md border border-gray-300 py-1.5 px-3 text-sm bg-white"
