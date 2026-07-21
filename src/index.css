@@ -4,7 +4,6 @@ body {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   direction: rtl;
   text-align: right;
-  background-color: #f3f4f6;
   color: #111827;
   margin: 0;
   padding: 0;
@@ -15,13 +14,16 @@ body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #f1f1f1;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
