@@ -57,6 +57,7 @@ export const Settings: React.FC = () => {
       setSyncState(state);
     });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadGeneralSettings = async () => {
