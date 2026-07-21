@@ -415,14 +415,16 @@ function ERPAppContent() {
             </div>
           )}
 
-          {activeTab === 'sales' && <Sales />}
-          {activeTab === 'purchases' && <Purchases />}
-          {activeTab === 'inventory' && <Inventory />}
-          {activeTab === 'manufacturing' && <Manufacturing />}
-          {activeTab === 'accounting' && <Accounting />}
-          {activeTab === 'hr' && <HR />}
-          {activeTab === 'reports' && <Reports />}
-          {activeTab === 'settings' && <Settings />}
+          <Suspense fallback={<ModuleLoadingFallback />}>
+            {activeTab === 'sales' && <Sales />}
+            {activeTab === 'purchases' && <Purchases />}
+            {activeTab === 'inventory' && <Inventory />}
+            {activeTab === 'manufacturing' && <Manufacturing />}
+            {activeTab === 'accounting' && <Accounting />}
+            {activeTab === 'hr' && <HR />}
+            {activeTab === 'reports' && <Reports />}
+            {activeTab === 'settings' && <Settings />}
+          </Suspense>
         </main>
       </div>
     </div>
