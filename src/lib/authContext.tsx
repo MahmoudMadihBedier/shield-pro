@@ -52,7 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (session?.user) {
         setUser(session.user);
         localStorage.setItem('erp_user', JSON.stringify(session.user));
-        await refreshProfile(session.user.id, session.user.email || '');
+        await refreshProfile(session.user.id, session.user.email || '', session.user.user_metadata?.name);
       } else {
         setUser(null);
         setProfile(null);
@@ -98,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
-  const refreshProfile = async (userId: string, email: string) => {
+  const refreshProfile = async (userId: string, email: string, metaName?: string) => {
     try {
       if (navigator.onLine) {
         // Fetch from Supabase
@@ -117,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const newProfile = {
             id: userId,
             email: email,
-            name: email.split('@')[0],
+            name: metaName || email.split('@')[0],
             role_id: isFirst ? masterRoleId : null
           };
 
@@ -209,24 +209,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      // The profile row (and first-user-becomes-Master-Admin check) is created
+      // by refreshProfile() once a real session exists (see onAuthStateChange
+      // above) — not here, since if email confirmation is required there is no
+      // authenticated session yet at this point, and an insert without one
+      // would be rejected once RLS is enforced. `name` rides along as auth
+      // user metadata so refreshProfile can use it once that session exists.
+      const { error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
       if (error) throw error;
-      if (data.user) {
-        // First user gets Master Admin automatically
-        const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
-        const masterRoleId = '88888888-8888-8888-8888-888888888888';
-        const isFirst = count === 0;
-
-        const newProfile = {
-          id: data.user.id,
-          email,
-          name,
-          role_id: isFirst ? masterRoleId : null
-        };
-
-        const { error: insErr } = await supabase.from('users').insert(newProfile);
-        if (insErr) throw insErr;
-      }
     } finally {
       setLoading(false);
     }
