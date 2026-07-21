@@ -26,6 +26,22 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const Inventory = lazy(() => import('./components/Inventory').then(m => ({ default: m.Inventory })));
+const Manufacturing = lazy(() => import('./components/Manufacturing').then(m => ({ default: m.Manufacturing })));
+const Sales = lazy(() => import('./components/Sales').then(m => ({ default: m.Sales })));
+const Purchases = lazy(() => import('./components/Purchases').then(m => ({ default: m.Purchases })));
+const Accounting = lazy(() => import('./components/Accounting').then(m => ({ default: m.Accounting })));
+const HR = lazy(() => import('./components/HR').then(m => ({ default: m.HR })));
+const Reports = lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+
+const ModuleLoadingFallback = () => (
+  <div className="flex items-center justify-center py-24 text-gray-500">
+    <RefreshCw className="animate-spin ml-2" size={20} />
+    جاري التحميل...
+  </div>
+);
+
 function ERPAppContent() {
   const { user, profile, signOut, checkPermission } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
