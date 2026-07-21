@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/dexie';
+import { getSetting } from '../lib/settingsHelper';
 import {
   FileText,
   DollarSign,
@@ -23,6 +24,7 @@ export const Reports: React.FC = () => {
   const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
   const [receiptVouchers, setReceiptVouchers] = useState<any[]>([]);
   const [paymentVouchers, setPaymentVouchers] = useState<any[]>([]);
+  const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0.5);
 
   // Date Filters
   const [startDate, setStartDate] = useState('');
@@ -44,6 +46,7 @@ export const Reports: React.FC = () => {
     const listPurInvs = await db.purchase_invoices.toArray();
     const listRecVouch = await db.receipt_vouchers.toArray();
     const listPayVouch = await db.payment_vouchers.toArray();
+    const overheadPerUnit = Number(await getSetting('labor_overhead_per_unit', '0.5'));
 
     setAccounts(listAccs);
     setTransactions(listTxs);
@@ -56,6 +59,7 @@ export const Reports: React.FC = () => {
     setPurchaseInvoices(listPurInvs);
     setReceiptVouchers(listRecVouch);
     setPaymentVouchers(listPayVouch);
+    setLaborOverheadPerUnit(overheadPerUnit);
   };
 
   // Filter transactions by date
@@ -157,7 +161,7 @@ export const Reports: React.FC = () => {
 
       // Cost estimation based on average components
       const matCost = actualQty * (Number(item?.default_price || 5) * 0.4);
-      const laborOverhead = actualQty * 0.5; // estimated 0.50 SAR per unit
+      const laborOverhead = actualQty * laborOverheadPerUnit;
       const totalCost = matCost + laborOverhead;
 
       return {
@@ -266,27 +270,27 @@ export const Reports: React.FC = () => {
             <div className="space-y-4 max-w-2xl text-sm">
               <div className="flex justify-between border-b pb-2">
                 <span className="font-bold text-gray-700">إجمالي المبيعات والإيرادات:</span>
-                <span className="font-mono text-base font-extrabold text-green-600">+{rev.toFixed(2)} ر.س</span>
+                <span className="font-mono text-base font-extrabold text-green-600">+{rev.toFixed(2)} ج.م</span>
               </div>
 
               <div className="flex justify-between border-b pb-2">
                 <span className="font-bold text-gray-700">تكلفة البضاعة المباعة (المواد الخام):</span>
-                <span className="font-mono text-base font-extrabold text-red-600">-{cogs.toFixed(2)} ر.س</span>
+                <span className="font-mono text-base font-extrabold text-red-600">-{cogs.toFixed(2)} ج.م</span>
               </div>
 
               <div className="flex justify-between border-b pb-2 bg-gray-50 p-2.5 rounded font-black text-gray-800">
                 <span>مجمل الربح التجاري (Gross Profit):</span>
-                <span className="font-mono text-lg">{grossProfit.toFixed(2)} ر.س</span>
+                <span className="font-mono text-lg">{grossProfit.toFixed(2)} ج.م</span>
               </div>
 
               <div className="flex justify-between border-b pb-2">
                 <span className="font-bold text-gray-700">المصروفات التشغيلية والرواتب:</span>
-                <span className="font-mono text-base font-extrabold text-red-600">-{exp.toFixed(2)} ر.س</span>
+                <span className="font-mono text-base font-extrabold text-red-600">-{exp.toFixed(2)} ج.م</span>
               </div>
 
               <div className="flex justify-between border-b pb-2 bg-blue-50 p-4 rounded-lg font-black text-blue-900 text-lg">
                 <span>صافي الأرباح والخسائر (Net Profit):</span>
-                <span className="font-mono text-xl">{netProfit.toFixed(2)} ر.س</span>
+                <span className="font-mono text-xl">{netProfit.toFixed(2)} ج.م</span>
               </div>
             </div>
           </div>
@@ -316,10 +320,10 @@ export const Reports: React.FC = () => {
                     {getCustomersAging().map(c => (
                       <tr key={c.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
-                        <td className="py-3 px-4 text-center font-bold text-gray-900 font-mono">{c.outstanding.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_0_30.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_31_90.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_90_plus.toFixed(2)} ر.س</td>
+                        <td className="py-3 px-4 text-center font-bold text-gray-900 font-mono">{c.outstanding.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_0_30.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_31_90.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_90_plus.toFixed(2)} ج.م</td>
                       </tr>
                     ))}
                   </tbody>
@@ -349,10 +353,10 @@ export const Reports: React.FC = () => {
                     {getSuppliersAging().map(s => (
                       <tr key={s.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{s.name}</td>
-                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{s.outstanding.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_0_30.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_31_90.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_90_plus.toFixed(2)} ر.س</td>
+                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{s.outstanding.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_0_30.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_31_90.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{s.aging_90_plus.toFixed(2)} ج.م</td>
                       </tr>
                     ))}
                   </tbody>
@@ -391,8 +395,8 @@ export const Reports: React.FC = () => {
                         <td className="py-3 px-4 font-bold text-gray-800">{item.name}</td>
                         <td className="py-3 px-4 text-gray-600">{typesArabic[item.type]}</td>
                         <td className="py-3 px-4 text-center font-bold font-mono">{stock}</td>
-                        <td className="py-3 px-4 text-center font-mono">{cost.toFixed(2)} ر.س</td>
-                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">{totalVal.toFixed(2)} ر.س</td>
+                        <td className="py-3 px-4 text-center font-mono">{cost.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">{totalVal.toFixed(2)} ج.م</td>
                       </tr>
                     );
                   })}
@@ -428,8 +432,8 @@ export const Reports: React.FC = () => {
                       <td className="py-3 px-4 font-semibold text-gray-700">{b.item_name}</td>
                       <td className="py-3 px-4 text-gray-600">{typesArabic[b.item_type] || b.item_type}</td>
                       <td className="py-3 px-4 text-center font-bold font-mono">{b.actual_qty}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-gray-900">{b.total_cost.toFixed(2)} ر.س</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{b.cost_per_unit.toFixed(2)} ر.س</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-gray-900">{b.total_cost.toFixed(2)} ج.م</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{b.cost_per_unit.toFixed(2)} ج.م</td>
                     </tr>
                   ))}
                 </tbody>

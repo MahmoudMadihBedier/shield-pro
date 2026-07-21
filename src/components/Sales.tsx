@@ -87,7 +87,7 @@ export const Sales: React.FC = () => {
     if (financial.length > 0) setVouchAccountId(financial[0].id);
 
     setVatEnabled(await getSettingBool('vat_enabled', false));
-    setVatPct(Number(await getSetting('default_vat_pct', '15')));
+    setVatPct(Number(await getSetting('default_vat_pct', '14')));
     setLineDiscountAllowed(await getSettingBool('discount_lines_enabled', true));
   };
 
@@ -532,7 +532,7 @@ export const Sales: React.FC = () => {
                 <label className="block text-xs font-bold text-gray-600 mb-1">العنوان</label>
                 <input
                   type="text"
-                  placeholder="الرياض، حي السلي"
+                  placeholder="القاهرة، مدينة نصر"
                   value={custAddress}
                   onChange={(e) => setCustAddress(e.target.value)}
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none"
@@ -540,7 +540,7 @@ export const Sales: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الرصيد الافتتاحي (مدين ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">الرصيد الافتتاحي (مدين ج.م)</label>
                 <input
                   type="number"
                   value={custOpening}
@@ -582,7 +582,7 @@ export const Sales: React.FC = () => {
                           Number(c.opening_balance) +
                           salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
                           receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        ).toFixed(2)} ر.س
+                        ).toFixed(2)} ج.م
                       </td>
                     </tr>
                   ))}
@@ -728,11 +728,11 @@ export const Sales: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between text-gray-600">
                 <span>المجموع الفرعي:</span>
-                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ر.س</span>
+                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ج.م</span>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">خصم كلي على الفاتورة (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-500 mb-1">خصم كلي على الفاتورة (ج.م)</label>
                 <input
                   type="number"
                   min="0"
@@ -746,13 +746,13 @@ export const Sales: React.FC = () => {
               {vatEnabled && (
                 <div className="flex justify-between text-gray-600 border-t pt-2">
                   <span>الضريبة ({vatPct}%):</span>
-                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ج.م</span>
                 </div>
               )}
 
               <div className="flex justify-between text-lg font-bold text-gray-900 border-t pt-3">
                 <span>المجموع النهائي:</span>
-                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ر.س</span>
+                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ج.م</span>
               </div>
             </div>
 
@@ -797,7 +797,7 @@ export const Sales: React.FC = () => {
                   {salesInvoices
                     .filter((i: any) => i.customer_id === vouchCustomer && i.status !== 'paid')
                     .map((i: any) => (
-                      <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ر.س)</option>
+                      <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ج.م)</option>
                     ))}
                 </select>
               </div>
@@ -817,7 +817,7 @@ export const Sales: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المقبوض (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المقبوض (ج.م)</label>
                 <input
                   type="number"
                   min="1"
@@ -860,7 +860,7 @@ export const Sales: React.FC = () => {
                       <tr key={v.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
                         <td className="py-3 px-4 text-gray-700">{cName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ر.س</td>
+                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
                       </tr>
@@ -947,7 +947,7 @@ export const Sales: React.FC = () => {
                       <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ر.س</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
                     </tr>
                   ))
                 ) : (

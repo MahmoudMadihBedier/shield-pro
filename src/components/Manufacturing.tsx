@@ -559,7 +559,7 @@ export const Manufacturing: React.FC = () => {
                       <div className="text-xs text-gray-500">النوع: {typesArabic[i.type]}</div>
                     </div>
                     <div className="text-left">
-                      <div className="font-bold text-blue-600 font-mono text-base">{cost.toFixed(2)} ر.س</div>
+                      <div className="font-bold text-blue-600 font-mono text-base">{cost.toFixed(2)} ج.م</div>
                       <div className="text-[10px] text-gray-400">تكلفة المواد التقريبية</div>
                     </div>
                   </div>
@@ -754,7 +754,7 @@ export const Manufacturing: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">أجور العمالة وتكاليف تشغيل إضافية (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">أجور العمالة وتكاليف تشغيل إضافية (ج.م)</label>
                 <input
                   type="number"
                   min="0"

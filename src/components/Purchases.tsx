@@ -82,7 +82,7 @@ export const Purchases: React.FC = () => {
     if (financial.length > 0) setVouchAccountId(financial[0].id);
 
     setVatEnabled(await getSettingBool('vat_enabled', false));
-    setVatPct(Number(await getSetting('default_vat_pct', '15')));
+    setVatPct(Number(await getSetting('default_vat_pct', '14')));
   };
 
   // Add Supplier
@@ -504,7 +504,7 @@ export const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الرصيد الافتتاحي (دائن ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">الرصيد الافتتاحي (دائن ج.م)</label>
                 <input
                   type="number"
                   value={suppOpening}
@@ -546,7 +546,7 @@ export const Purchases: React.FC = () => {
                           Number(s.opening_balance) +
                           purchaseInvoices.filter((i: any) => i.supplier_id === s.id).reduce((sum, i) => sum + Number(i.total), 0) -
                           paymentVouchers.filter((v: any) => v.supplier_id === s.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        ).toFixed(2)} ر.س
+                        ).toFixed(2)} ج.م
                       </td>
                     </tr>
                   ))}
@@ -678,11 +678,11 @@ export const Purchases: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between text-gray-600">
                 <span>المجموع الفرعي:</span>
-                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ر.س</span>
+                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ج.م</span>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">خصم المورد (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-500 mb-1">خصم المورد (ج.م)</label>
                 <input
                   type="number"
                   min="0"
@@ -696,13 +696,13 @@ export const Purchases: React.FC = () => {
               {vatEnabled && (
                 <div className="flex justify-between text-gray-600 border-t pt-2">
                   <span>الضريبة المضافة ({vatPct}%):</span>
-                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ر.س</span>
+                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ج.م</span>
                 </div>
               )}
 
               <div className="flex justify-between text-lg font-bold text-gray-900 border-t pt-3">
                 <span>المجموع الكلي:</span>
-                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ر.س</span>
+                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ج.م</span>
               </div>
             </div>
 
@@ -747,7 +747,7 @@ export const Purchases: React.FC = () => {
                   {purchaseInvoices
                     .filter((i: any) => i.supplier_id === vouchSupplier && i.status !== 'paid')
                     .map((i: any) => (
-                      <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ر.س)</option>
+                      <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ج.م)</option>
                     ))}
                 </select>
               </div>
@@ -767,7 +767,7 @@ export const Purchases: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المصروف (ر.س)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المصروف (ج.م)</label>
                 <input
                   type="number"
                   min="1"
@@ -810,7 +810,7 @@ export const Purchases: React.FC = () => {
                       <tr key={v.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
                         <td className="py-3 px-4 text-gray-700">{sName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{v.amount} ر.س</td>
+                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{v.amount} ج.م</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
                         <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
                       </tr>
@@ -897,7 +897,7 @@ export const Purchases: React.FC = () => {
                       <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.debit > 0 ? `-${rec.debit.toFixed(2)}` : '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.credit > 0 ? `+${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ر.س</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
                     </tr>
                   ))
                 ) : (

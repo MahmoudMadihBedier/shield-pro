@@ -1,14 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './lib/authContext';
 import { Auth } from './components/Auth';
-import { Settings } from './components/Settings';
-import { Inventory } from './components/Inventory';
-import { Manufacturing } from './components/Manufacturing';
-import { Sales } from './components/Sales';
-import { Purchases } from './components/Purchases';
-import { Accounting } from './components/Accounting';
-import { HR } from './components/HR';
-import { Reports } from './components/Reports';
 import { db } from './lib/dexie';
 import { subscribeToSync } from './lib/sync';
 import {
@@ -335,7 +327,7 @@ function ERPAppContent() {
                 <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
                   <div className="space-y-1">
                     <span className="text-xs font-bold text-gray-500">مبيعات اليوم الفعلية</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.todaySales.toFixed(2)} ر.س</div>
+                    <div className="text-2xl font-black text-gray-900">{stats.todaySales.toFixed(2)} ج.م</div>
                   </div>
                   <div className="p-3 bg-green-50 text-green-600 rounded-full">
                     <TrendingUp className="h-6 w-6" />
@@ -345,7 +337,7 @@ function ERPAppContent() {
                 <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
                   <div className="space-y-1">
                     <span className="text-xs font-bold text-gray-500">السيولة النقدية المتاحة (كاش وبنك)</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.cashBank.toFixed(2)} ر.س</div>
+                    <div className="text-2xl font-black text-gray-900">{stats.cashBank.toFixed(2)} ج.م</div>
                   </div>
                   <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
                     <CreditCard className="h-6 w-6" />
