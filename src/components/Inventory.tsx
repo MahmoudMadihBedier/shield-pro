@@ -31,6 +31,9 @@ export const Inventory: React.FC = () => {
   const [itemUomId, setItemUomId] = useState('');
   const [itemExpiryTracking, setItemExpiryTracking] = useState(false);
   const [itemDefaultPrice, setItemDefaultPrice] = useState('0');
+  const [itemBarcode, setItemBarcode] = useState('');
+  const [itemCartonBarcode, setItemCartonBarcode] = useState('');
+  const [itemCartonPackSize, setItemCartonPackSize] = useState('20');
   const [editingItem, setEditingItem] = useState<any | null>(null);
 
   // New Adjustment/Movement State
@@ -90,6 +93,9 @@ export const Inventory: React.FC = () => {
         uom_id: itemUomId,
         expiry_tracking_enabled: itemExpiryTracking,
         default_price: Number(itemDefaultPrice),
+        barcode: itemBarcode.trim() || null,
+        carton_barcode: itemCartonBarcode.trim() || null,
+        carton_pack_size: itemCartonBarcode.trim() ? Number(itemCartonPackSize) : null,
         created_at: editingItem ? editingItem.created_at : new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -98,6 +104,9 @@ export const Inventory: React.FC = () => {
       setItemName('');
       setItemReorderLevel('0');
       setItemDefaultPrice('0');
+      setItemBarcode('');
+      setItemCartonBarcode('');
+      setItemCartonPackSize('20');
       setEditingItem(null);
       await loadData();
     } catch (e: any) {
@@ -113,6 +122,9 @@ export const Inventory: React.FC = () => {
     setItemUomId(item.uom_id);
     setItemExpiryTracking(item.expiry_tracking_enabled);
     setItemDefaultPrice(String(item.default_price));
+    setItemBarcode(item.barcode || '');
+    setItemCartonBarcode(item.carton_barcode || '');
+    setItemCartonPackSize(item.carton_pack_size ? String(item.carton_pack_size) : '20');
   };
 
   const handleCreateAdjustment = async (e: React.FormEvent) => {
@@ -356,6 +368,41 @@ export const Inventory: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">باركود الوحدة الواحدة</label>
+                <input
+                  type="text"
+                  placeholder="امسح الباركود أو أدخله يدوياً"
+                  value={itemBarcode}
+                  onChange={(e) => setItemBarcode(e.target.value)}
+                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left font-mono"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">باركود الكرتونة (اختياري)</label>
+                  <input
+                    type="text"
+                    placeholder="باركود الكرتونة الكاملة"
+                    value={itemCartonBarcode}
+                    onChange={(e) => setItemCartonBarcode(e.target.value)}
+                    className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">عدد القطع بالكرتونة</label>
+                  <input
+                    type="number"
+                    min="1"
+                    disabled={!itemCartonBarcode.trim()}
+                    value={itemCartonPackSize}
+                    onChange={(e) => setItemCartonPackSize(e.target.value)}
+                    className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left disabled:bg-gray-100"
+                  />
+                </div>
+              </div>
+
               <div className="flex items-center gap-2 pt-2">
                 <input
                   type="checkbox"
@@ -383,6 +430,9 @@ export const Inventory: React.FC = () => {
                       setItemName('');
                       setItemReorderLevel('0');
                       setItemDefaultPrice('0');
+                      setItemBarcode('');
+                      setItemCartonBarcode('');
+                      setItemCartonPackSize('20');
                     }}
                     className="py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs font-bold"
                   >

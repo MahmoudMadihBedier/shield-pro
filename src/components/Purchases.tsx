@@ -38,7 +38,7 @@ export const Purchases: React.FC = () => {
 
   // Settings Cache
   const [vatEnabled, setVatEnabled] = useState(false);
-  const [vatPct, setVatPct] = useState(15);
+  const [vatPct, setVatPct] = useState(14);
 
   // 3. Payment Voucher State
   const [vouchSupplier, setVouchSupplier] = useState('');

@@ -17,7 +17,7 @@ import {
 
 export const Settings: React.FC = () => {
   // Section states
-  const [activeTab, setActiveTab] = useState<'general' | 'roles' | 'warehouses' | 'sync'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'roles' | 'warehouses' | 'sync' | 'audit'>('general');
   const [loading, setLoading] = useState(false);
   const [alertMsg, setAlertMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -49,10 +49,17 @@ export const Settings: React.FC = () => {
   // Sync state
   const [syncState, setSyncState] = useState<any>(null);
 
+  // Audit log state
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditUsers, setAuditUsers] = useState<any[]>([]);
+  const [auditRetentionDays, setAuditRetentionDays] = useState('90');
+  const [auditTableFilter, setAuditTableFilter] = useState('');
+
   useEffect(() => {
     loadGeneralSettings();
     loadRolesAndPermissions();
     loadWarehouses();
+    loadAuditLog();
 
     const unsub = subscribeToSync((state) => {
       setSyncState(state);
@@ -60,6 +67,31 @@ export const Settings: React.FC = () => {
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadAuditLog = async () => {
+    const [logs, users] = await Promise.all([db.audit_log.toArray(), db.users.toArray()]);
+    logs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    setAuditLogs(logs);
+    setAuditUsers(users);
+    setAuditRetentionDays(await getSetting('audit_log_retention_days', '90'));
+  };
+
+  const saveAuditRetention = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await saveSetting('audit_log_retention_days', auditRetentionDays);
+      showNotification('success', 'تم حفظ مدة الاحتفاظ بسجل المراجعة بنجاح!');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const auditActionArabic: { [key: string]: string } = {
+    insert: 'إضافة',
+    update: 'تعديل',
+    delete: 'حذف'
+  };
 
   const loadGeneralSettings = async () => {
     setCompanyName(await getSetting('company_name', 'مؤسسة لواصق الإطارات الفورية'));
@@ -302,6 +334,15 @@ export const Settings: React.FC = () => {
         >
           <History className="h-4 w-4" />
           <span>المزامنة والأوفلاين</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('audit')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeTab === 'audit' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <AlertCircle className="h-4 w-4" />
+          <span>سجل المراجعة</span>
         </button>
       </div>
 
@@ -730,6 +771,100 @@ export const Settings: React.FC = () => {
               ) : (
                 <div className="text-gray-500 italic py-2">لا يوجد سجلات مزامنة معروضة حالياً.</div>
               )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'audit' && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-4">سجل مراجعة العمليات (Audit Log)</h3>
+
+            <form onSubmit={saveAuditRetention} className="flex flex-wrap items-end gap-4 bg-gray-50 border rounded-lg p-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">مدة الاحتفاظ بسجل المراجعة (بالأيام)</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={auditRetentionDays}
+                  onChange={(e) => setAuditRetentionDays(e.target.value)}
+                  className="mt-1 block w-40 rounded-md border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white rounded py-2 px-4 text-sm font-bold transition disabled:opacity-50"
+              >
+                <Save className="h-4 w-4" />
+                <span>حفظ</span>
+              </button>
+              <div className="w-full sm:w-auto">
+                <label className="block text-sm font-medium text-gray-700">تصفية حسب الجدول</label>
+                <input
+                  type="text"
+                  value={auditTableFilter}
+                  onChange={(e) => setAuditTableFilter(e.target.value)}
+                  placeholder="مثال: sales_invoices"
+                  className="mt-1 block w-full sm:w-56 rounded-md border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:ring-blue-500 text-left"
+                />
+              </div>
+            </form>
+
+            <div className="text-xs text-gray-500">
+              يقوم النظام بتسجيل كل عملية إضافة أو تعديل أو حذف تلقائياً (متاح فقط للمستخدمين الذين لديهم صلاحية الإعدادات). يتم عرض آخر 200 عملية فقط أدناه.
+            </div>
+
+            <div className="overflow-x-auto border rounded-lg">
+              <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="py-2 px-3 text-right font-medium text-gray-500">التاريخ والوقت</th>
+                    <th className="py-2 px-3 text-right font-medium text-gray-500">المستخدم</th>
+                    <th className="py-2 px-3 text-right font-medium text-gray-500">الجدول</th>
+                    <th className="py-2 px-3 text-right font-medium text-gray-500">العملية</th>
+                    <th className="py-2 px-3 text-right font-medium text-gray-500">رقم السجل</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {auditLogs
+                    .filter((log: any) => !auditTableFilter || log.table_name?.includes(auditTableFilter))
+                    .slice(0, 200)
+                    .map((log: any) => {
+                      const auditUser = auditUsers.find((u: any) => u.id === log.user_id);
+                      return (
+                        <tr key={log.id}>
+                          <td className="py-2 px-3 whitespace-nowrap font-mono text-xs text-gray-600">
+                            {log.timestamp ? new Date(log.timestamp).toLocaleString('ar-EG') : '-'}
+                          </td>
+                          <td className="py-2 px-3">{auditUser?.name || auditUser?.email || 'غير معروف'}</td>
+                          <td className="py-2 px-3 font-mono text-xs">{log.table_name}</td>
+                          <td className="py-2 px-3">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-xs font-bold ${
+                                log.action === 'insert'
+                                  ? 'bg-green-100 text-green-700'
+                                  : log.action === 'delete'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-yellow-100 text-yellow-700'
+                              }`}
+                            >
+                              {auditActionArabic[log.action] || log.action}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 font-mono text-xs text-gray-500">{log.record_id}</td>
+                        </tr>
+                      );
+                    })}
+                  {auditLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-gray-400">
+                        لا توجد عمليات مسجلة بعد.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
