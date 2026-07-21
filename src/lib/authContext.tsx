@@ -68,6 +68,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
+  // Keep a ref alongside profile state so the heartbeat interval always
+  // writes the latest profile fields instead of a stale closure snapshot.
+  const profileRef = useRef<UserProfile | null>(null);
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  const recordPresence = async (base: UserProfile) => {
+    const updated: UserProfile = {
+      ...base,
+      app_version: __APP_VERSION__,
+      platform: detectPlatform(),
+      last_seen_at: new Date().toISOString()
+    };
+    localStorage.setItem('erp_profile', JSON.stringify(updated));
+    await queueOfflineWrite('users', 'update', updated.id, updated);
+  };
+
+  // Record app version / last-seen on login, then on a periodic heartbeat
+  // while the app stays open, so "Users & Devices" reflects live presence.
+  useEffect(() => {
+    if (!profile) return;
+    recordPresence(profile);
+    const interval = setInterval(() => {
+      if (profileRef.current) recordPresence(profileRef.current);
+    }, PRESENCE_HEARTBEAT_MS);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
+
   const refreshProfile = async (userId: string, email: string) => {
     try {
       if (navigator.onLine) {
