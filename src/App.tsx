@@ -23,7 +23,9 @@ import {
   Bell,
   TrendingUp,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  Smartphone,
+  MapPin
 } from 'lucide-react';
 
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
@@ -34,6 +36,8 @@ const Purchases = lazy(() => import('./components/Purchases').then(m => ({ defau
 const Accounting = lazy(() => import('./components/Accounting').then(m => ({ default: m.Accounting })));
 const HR = lazy(() => import('./components/HR').then(m => ({ default: m.HR })));
 const Reports = lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+const UsersDevices = lazy(() => import('./components/UsersDevices').then(m => ({ default: m.UsersDevices })));
+const RepTracking = lazy(() => import('./components/RepTracking').then(m => ({ default: m.RepTracking })));
 
 const ModuleLoadingFallback = () => (
   <div className="flex items-center justify-center py-24 text-gray-500">
@@ -253,6 +257,30 @@ function ERPAppContent() {
             </button>
           )}
 
+          {checkPermission('user_tracking', 'view') && (
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'users' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <Smartphone className="h-5 w-5" />
+              <span>المستخدمون والأجهزة</span>
+            </button>
+          )}
+
+          {checkPermission('gps_tracking', 'view') && (
+            <button
+              onClick={() => setActiveTab('gps')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'gps' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <MapPin className="h-5 w-5" />
+              <span>تتبع المندوبين</span>
+            </button>
+          )}
+
           {checkPermission('settings', 'view') && (
             <button
               onClick={() => setActiveTab('settings')}
@@ -423,6 +451,8 @@ function ERPAppContent() {
             {activeTab === 'accounting' && <Accounting />}
             {activeTab === 'hr' && <HR />}
             {activeTab === 'reports' && <Reports />}
+            {activeTab === 'users' && <UsersDevices />}
+            {activeTab === 'gps' && <RepTracking />}
             {activeTab === 'settings' && <Settings />}
           </Suspense>
         </main>
