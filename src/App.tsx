@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './lib/authContext';
 import { Auth } from './components/Auth';
 import { db } from './lib/dexie';
 import { subscribeToSync } from './lib/sync';
+import { useLocationTracking } from './lib/useLocationTracking';
 import {
   ShieldAlert,
   Menu,
@@ -50,6 +51,8 @@ function ERPAppContent() {
   const { user, profile, signOut, checkPermission } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+
+  useLocationTracking(profile);
 
   // Sync state
   const [syncState, setSyncState] = useState<any>(null);
