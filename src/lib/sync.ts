@@ -15,6 +15,33 @@ let syncState: SyncState = {
   syncLogs: []
 };
 
+let currentUserId: string | null = null;
+
+// Called by authContext on sign-in/sign-out so writes can be attributed in the audit log
+export function setCurrentUserId(id: string | null) {
+  currentUserId = id;
+}
+
+const AUDIT_EXCLUDED_TABLES = new Set(['audit_log', 'offline_queue']);
+
+async function logAudit(tableName: string, action: 'insert' | 'update' | 'delete', recordId: string, oldValue: any, newValue: any) {
+  try {
+    const id = crypto.randomUUID();
+    await queueOfflineWrite('audit_log', 'insert', id, {
+      id,
+      user_id: currentUserId,
+      table_name: tableName,
+      record_id: recordId,
+      action,
+      old_value: oldValue ? JSON.stringify(oldValue) : null,
+      new_value: newValue ? JSON.stringify(newValue) : null,
+      timestamp: new Date().toISOString()
+    });
+  } catch {
+    // Auditing must never block the primary write
+  }
+}
+
 const listeners = new Set<(state: SyncState) => void>();
 
 export function subscribeToSync(listener: (state: SyncState) => void) {
@@ -98,6 +125,9 @@ export async function queueOfflineWrite(
   try {
     // 1. Write to local Dexie table (if not deleting)
     const table = (db as any)[tableName];
+    const shouldAudit = !AUDIT_EXCLUDED_TABLES.has(tableName);
+    const oldValue = shouldAudit && table ? await table.get(recordId) : null;
+
     if (table) {
       if (action === 'delete') {
         await table.delete(recordId);
@@ -119,7 +149,12 @@ export async function queueOfflineWrite(
     updateSyncState({ pendingCount: pending });
     addLog(`تم حفظ العملية محلياً في جدول ${tableName}`);
 
-    // 3. Trigger immediate sync if online
+    // 3. Record audit trail entry (never blocks the primary write)
+    if (shouldAudit) {
+      await logAudit(tableName, action, recordId, oldValue, action === 'delete' ? null : data);
+    }
+
+    // 4. Trigger immediate sync if online
     if (navigator.onLine) {
       triggerSync();
     }

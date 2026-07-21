@@ -1,6 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
 import { db } from './dexie';
+import { setCurrentUserId, queueOfflineWrite } from './sync';
+import { detectPlatform } from './deviceInfo';
+
+const PRESENCE_HEARTBEAT_MS = 5 * 60 * 1000;
 
 export interface UserProfile {
   id: string;
@@ -9,6 +13,9 @@ export interface UserProfile {
   role_id: string | null;
   role_name?: string;
   permissions?: { [key: string]: { view: boolean; add: boolean; edit: boolean; delete: boolean } };
+  app_version?: string;
+  platform?: string;
+  last_seen_at?: string;
 }
 
 interface AuthContextType {
@@ -34,7 +41,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const cachedProfile = localStorage.getItem('erp_profile');
     if (cachedUser && cachedProfile) {
       setUser(JSON.parse(cachedUser));
-      setProfile(JSON.parse(cachedProfile));
+      const parsedProfile = JSON.parse(cachedProfile);
+      setProfile(parsedProfile);
+      setCurrentUserId(parsedProfile.id);
       setLoading(false);
     }
 
@@ -47,6 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setUser(null);
         setProfile(null);
+        setCurrentUserId(null);
         localStorage.removeItem('erp_user');
         localStorage.removeItem('erp_profile');
       }
@@ -120,6 +130,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           };
 
           setProfile(fullProfile);
+          setCurrentUserId(fullProfile.id);
           localStorage.setItem('erp_profile', JSON.stringify(fullProfile));
           // Save to local Dexie for offline access
           await db.users.put(fullProfile);
@@ -129,6 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const localProf = await db.users.get(userId);
         if (localProf) {
           setProfile(localProf);
+          setCurrentUserId(localProf.id);
         }
       }
     } catch (e) {
@@ -152,6 +164,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (userObj.email === email) {
             setUser(userObj);
             setProfile(profileObj);
+            setCurrentUserId(profileObj.id);
             setLoading(false);
             return;
           }
@@ -193,6 +206,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    setCurrentUserId(null);
     localStorage.removeItem('erp_user');
     localStorage.removeItem('erp_profile');
   };

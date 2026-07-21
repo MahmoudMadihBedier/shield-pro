@@ -85,6 +85,11 @@ class ERPDatabase extends Dexie {
       payroll_runs: 'id, month, employee_id',
       audit_log: 'id, user_id, table_name'
     });
+
+    // v2: indexed lookup fields for barcode scanning (unit + carton barcodes on items)
+    this.version(2).stores({
+      items: 'id, name, type, barcode, carton_barcode'
+    });
   }
 }
 

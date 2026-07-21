@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../lib/dexie';
 import { queueOfflineWrite } from '../lib/sync';
 import { getSetting, getSettingBool } from '../lib/settingsHelper';
+import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
 import {
   Users,
   Plus,
   Trash2,
   FileText,
   Receipt,
-  TrendingUp
+  TrendingUp,
+  Boxes
 } from 'lucide-react';
 
 export const Sales: React.FC = () => {
@@ -23,6 +25,8 @@ export const Sales: React.FC = () => {
   const [receiptVouchers, setReceiptVouchers] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [itemNamesById, setItemNamesById] = useState<{ [id: string]: string }>({});
+  const [packagingRecipes, setPackagingRecipes] = useState<any[]>([]);
 
   // 1. Customer State
   const [custName, setCustName] = useState('');
@@ -39,7 +43,7 @@ export const Sales: React.FC = () => {
 
   // Settings Cache
   const [vatEnabled, setVatEnabled] = useState(false);
-  const [vatPct, setVatPct] = useState(15);
+  const [vatPct, setVatPct] = useState(14);
   const [lineDiscountAllowed, setLineDiscountAllowed] = useState(true);
 
   // 3. Receipt Voucher State
@@ -60,12 +64,14 @@ export const Sales: React.FC = () => {
 
   const loadData = async () => {
     const listCusts = await db.customers.toArray();
-    const listItems = await db.items.filter((i: any) => i.type === 'finished_good').toArray();
+    const listAllItems = await db.items.toArray();
+    const listItems = listAllItems.filter((i: any) => i.type === 'finished_good');
     const listInvs = await db.sales_invoices.toArray();
     const listRets = await db.sales_returns.toArray();
     const listVouch = await db.receipt_vouchers.toArray();
     const listWh = await db.warehouses.filter((w: any) => w.is_active).toArray();
     const listAccs = await db.accounts.toArray();
+    const listRecipes = await db.item_recipes.filter((r: any) => r.recipe_type === 'packaging').toArray();
 
     setCustomers(listCusts);
     setItems(listItems);
@@ -74,6 +80,8 @@ export const Sales: React.FC = () => {
     setReceiptVouchers(listVouch);
     setWarehouses(listWh);
     setAccounts(listAccs);
+    setPackagingRecipes(listRecipes);
+    setItemNamesById(Object.fromEntries(listAllItems.map((i: any) => [i.id, i.name])));
 
     if (listCusts.length > 0) {
       setInvCustomer(listCusts[0].id);
@@ -145,6 +153,34 @@ export const Sales: React.FC = () => {
   const handleAddInvoiceLine = () => {
     setInvLines([...invLines, { item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
   };
+
+  // Scanning an item's unit barcode adds qty 1; scanning its carton barcode
+  // adds qty = that item's carton_pack_size (e.g. 20), exactly like typing that qty manually.
+  const handleScannedItem = (scanned: ScannableItem, qty: number) => {
+    setInvLines((prev) => {
+      const existingIdx = prev.findIndex((l: any) => l.item_id === scanned.id);
+      if (existingIdx !== -1) {
+        const updated = [...prev];
+        updated[existingIdx] = { ...updated[existingIdx], qty: Number(updated[existingIdx].qty) + qty };
+        return updated;
+      }
+      const fullItem = items.find((i: any) => i.id === scanned.id);
+      const newLine = { item_id: scanned.id, qty, unit_price: fullItem ? fullItem.default_price : 0, discount: 0 };
+      const emptyIdx = prev.findIndex((l: any) => !l.item_id);
+      if (emptyIdx !== -1) {
+        const updated = [...prev];
+        updated[emptyIdx] = newLine;
+        return updated;
+      }
+      return [...prev, newLine];
+    });
+  };
+
+  const handleScanNotFound = (code: string) => {
+    alert(`لم يتم العثور على صنف بهذا الباركود: ${code}`);
+  };
+
+  const getPackagingBomFor = (itemId: string) => packagingRecipes.filter((r: any) => r.parent_item_id === itemId);
 
   const handleRemoveInvoiceLine = (index: number) => {
     const updated = [...invLines];
@@ -644,6 +680,10 @@ export const Sales: React.FC = () => {
 
             {/* Lines rows */}
             <div className="space-y-4">
+              <div className="bg-gray-50 border border-dashed border-gray-300 p-3 rounded">
+                <BarcodeScanInput items={items} onResolved={handleScannedItem} onNotFound={handleScanNotFound} />
+              </div>
+
               <div className="flex justify-between items-center bg-gray-100 p-2 rounded">
                 <span className="text-xs font-bold text-gray-700">بنود الفاتورة:</span>
                 <button
@@ -657,7 +697,8 @@ export const Sales: React.FC = () => {
               </div>
 
               {invLines.map((line, idx) => (
-                <div key={idx} className="flex gap-4 items-center">
+                <div key={idx} className="space-y-1.5">
+                <div className="flex gap-4 items-center">
                   <div className="flex-1">
                     <select
                       required
@@ -717,6 +758,18 @@ export const Sales: React.FC = () => {
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
+                </div>
+                  {line.item_id && getPackagingBomFor(line.item_id).length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 pr-1">
+                      <Boxes className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                      <span className="font-bold">مكونات التعبئة لكل وحدة:</span>
+                      {getPackagingBomFor(line.item_id).map((r: any) => (
+                        <span key={r.id} className="bg-gray-100 rounded px-2 py-0.5">
+                          {itemNamesById[r.component_item_id] || '—'} × {r.quantity_or_percentage}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
