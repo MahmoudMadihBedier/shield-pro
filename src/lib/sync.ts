@@ -218,7 +218,7 @@ export async function pullFromServer() {
     'purchase_invoices', 'purchase_invoice_lines', 'purchase_returns',
     'purchase_return_lines', 'accounts', 'account_transactions',
     'receipt_vouchers', 'payment_vouchers', 'fixed_assets', 'expenses',
-    'employees', 'attendance', 'payroll_runs', 'audit_log'
+    'employees', 'attendance', 'payroll_runs', 'audit_log', 'user_locations'
   ];
 
   for (const t of tables) {
