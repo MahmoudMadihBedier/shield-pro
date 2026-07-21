@@ -108,17 +108,59 @@ export const Settings: React.FC = () => {
   };
 
   const loadRolesAndPermissions = async () => {
-    const listRoles = await db.roles.toArray();
+    let listPerms = await db.permissions.toArray();
+    listPerms = await ensureModulePermissionsSeeded(listPerms);
+    setPermissions(listPerms);
+
+    let listRoles = await db.roles.toArray();
+    listRoles = await ensureSalesRepRoleSeeded(listRoles, listPerms);
     setRoles(listRoles);
     if (listRoles.length > 0 && !selectedRoleId) {
       setSelectedRoleId(listRoles[0].id);
     }
 
-    const listPerms = await db.permissions.toArray();
-    setPermissions(listPerms);
-
     const listRp = await db.role_permissions.toArray();
     setRolePermissions(listRp);
+  };
+
+  // New modules (Users & Devices, Rep Tracking) need permission rows to show up
+  // in the matrix below since modules are entirely data-driven from this table.
+  const ensureModulePermissionsSeeded = async (existingPerms: any[]) => {
+    const existingKeys = new Set(existingPerms.map((p: any) => `${p.module}:${p.action}`));
+    const newModules = ['user_tracking', 'gps_tracking'];
+    const actions = ['view', 'add', 'edit', 'delete'];
+    const missing: any[] = [];
+
+    for (const m of newModules) {
+      for (const a of actions) {
+        if (!existingKeys.has(`${m}:${a}`)) {
+          missing.push({ id: crypto.randomUUID(), module: m, action: a, created_at: new Date().toISOString() });
+        }
+      }
+    }
+
+    for (const perm of missing) {
+      await queueOfflineWrite('permissions', 'insert', perm.id, perm);
+    }
+    return missing.length > 0 ? [...existingPerms, ...missing] : existingPerms;
+  };
+
+  // Convenience default: a ready-made "Sales Rep" role so the owner doesn't
+  // have to build it by hand; permissions can still be tuned in the matrix.
+  const ensureSalesRepRoleSeeded = async (existingRoles: any[], perms: any[]) => {
+    if (existingRoles.some((r: any) => r.name === 'مندوب مبيعات')) return existingRoles;
+
+    const roleId = crypto.randomUUID();
+    const roleObj = { id: roleId, name: 'مندوب مبيعات', created_at: new Date().toISOString() };
+    await queueOfflineWrite('roles', 'insert', roleId, roleObj);
+
+    const defaultGrants = perms.filter((p: any) => p.module === 'sales' && (p.action === 'view' || p.action === 'add'));
+    for (const perm of defaultGrants) {
+      const rpId = crypto.randomUUID();
+      await queueOfflineWrite('role_permissions', 'insert', rpId, { id: rpId, role_id: roleId, permission_id: perm.id });
+    }
+
+    return [...existingRoles, roleObj];
   };
 
   const loadWarehouses = async () => {
@@ -273,7 +315,9 @@ export const Settings: React.FC = () => {
     accounting: 'الحسابات والمالية',
     hr: 'الموارد البشرية والرواتب',
     reports: 'التقارير والمؤشرات',
-    settings: 'الإعدادات والصلاحيات'
+    settings: 'الإعدادات والصلاحيات',
+    user_tracking: 'المستخدمون والأجهزة',
+    gps_tracking: 'تتبع المندوبين (GPS)'
   };
 
   const uniqueModules = Array.from(new Set(permissions.map((p: any) => p.module)));
