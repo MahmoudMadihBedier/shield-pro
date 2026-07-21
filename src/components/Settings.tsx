@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/dexie';
 import { queueOfflineWrite, triggerSync, pullFromServer, subscribeToSync } from '../lib/sync';
-import { getSetting, saveSetting } from '../lib/settingsHelper';
+import { getSetting, getSettingBool, saveSetting } from '../lib/settingsHelper';
 import {
   Save,
   Plus,
@@ -32,6 +32,8 @@ export const Settings: React.FC = () => {
   const [reorderAlertsEnabled, setReorderAlertsEnabled] = useState(true);
   const [expiryTrackingEnabled, setExpiryTrackingEnabled] = useState(false);
   const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState('0.5');
+  const [gpsTrackingEnabled, setGpsTrackingEnabled] = useState(false);
+  const [gpsTrackedRoleIds, setGpsTrackedRoleIds] = useState<string[]>([]);
 
   // Roles & Permissions state
   const [roles, setRoles] = useState<any[]>([]);
@@ -105,6 +107,8 @@ export const Settings: React.FC = () => {
     setExpiryTrackingEnabled((await getSetting('expiry_tracking_enabled', 'false')) === 'true');
     setMultiWarehouseEnabled((await getSetting('multi_warehouse_enabled', 'false')) === 'true');
     setLaborOverheadPerUnit(await getSetting('labor_overhead_per_unit', '0.5'));
+    setGpsTrackingEnabled(await getSettingBool('gps_tracking_enabled', false));
+    setGpsTrackedRoleIds((await getSetting('gps_tracking_role_ids', '')).split(',').map((s) => s.trim()).filter(Boolean));
   };
 
   const loadRolesAndPermissions = async () => {
@@ -188,6 +192,8 @@ export const Settings: React.FC = () => {
       await saveSetting('expiry_tracking_enabled', String(expiryTrackingEnabled));
       await saveSetting('multi_warehouse_enabled', String(multiWarehouseEnabled));
       await saveSetting('labor_overhead_per_unit', laborOverheadPerUnit);
+      await saveSetting('gps_tracking_enabled', String(gpsTrackingEnabled));
+      await saveSetting('gps_tracking_role_ids', gpsTrackedRoleIds.join(','));
 
       showNotification('success', 'تم حفظ الإعدادات العامة بنجاح!');
     } catch (err: any) {
@@ -514,6 +520,48 @@ export const Settings: React.FC = () => {
                   <option value="false">لا يتطلب تاريخ صلاحية</option>
                   <option value="true">تفعيل تتبع الصلاحية الإلزامي</option>
                 </select>
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-bold text-gray-800 mb-3">تتبع موقع المستخدمين (GPS)</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">تفعيل تتبع الموقع الجغرافي</label>
+                  <select
+                    value={String(gpsTrackingEnabled)}
+                    onChange={(e) => setGpsTrackingEnabled(e.target.value === 'true')}
+                    className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:ring-blue-500"
+                  >
+                    <option value="false">تعطيل التتبع</option>
+                    <option value="true">تفعيل التتبع (أثناء فتح التطبيق فقط)</option>
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">
+                    يتم تسجيل الموقع فقط أثناء استخدام المستخدم للتطبيق فعلياً وبعد موافقته على إذن الموقع من المتصفح.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">الأدوار الخاضعة للتتبع</label>
+                  <div className="flex flex-wrap gap-3 border rounded-md p-2.5">
+                    {roles.length === 0 && <span className="text-xs text-gray-400">لا توجد أدوار بعد</span>}
+                    {roles.map((r: any) => (
+                      <label key={r.id} className="flex items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={gpsTrackedRoleIds.includes(r.id)}
+                          onChange={(e) => {
+                            setGpsTrackedRoleIds((prev) =>
+                              e.target.checked ? [...prev, r.id] : prev.filter((id) => id !== r.id)
+                            );
+                          }}
+                          className="rounded border-gray-300 text-blue-600"
+                        />
+                        {r.name}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">بدون تحديد، يتم تتبع دور "مندوب مبيعات" افتراضياً فقط.</p>
+                </div>
               </div>
             </div>
 
