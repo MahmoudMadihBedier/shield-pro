@@ -45,6 +45,7 @@ class ERPDatabase extends Dexie {
   attendance!: Table<any, string>;
   payroll_runs!: Table<any, string>;
   audit_log!: Table<any, string>;
+  user_locations!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -89,6 +90,11 @@ class ERPDatabase extends Dexie {
     // v2: indexed lookup fields for barcode scanning (unit + carton barcodes on items)
     this.version(2).stores({
       items: 'id, name, type, barcode, carton_barcode'
+    });
+
+    // v3: GPS location pings for rep/user tracking (foreground-only)
+    this.version(3).stores({
+      user_locations: 'id, user_id, recorded_at'
     });
   }
 }
