@@ -2,8 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import App from './App.tsx'
-import { ErrorBoundary } from './components/ErrorBoundary.tsx'
-import { isSupabaseConfigured } from './lib/supabase.ts'
+import { ErrorBoundary } from './presentation/components/ErrorBoundary.tsx'
+import { isSupabaseConfigured } from './infrastructure/api/supabase.ts'
 import './index.css'
 
 registerSW({ immediate: true })
