@@ -1,9 +1,8 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
-import { AuthProvider, useAuth } from './lib/authContext';
-import { Auth } from './components/Auth';
-import { db } from './lib/dexie';
-import { subscribeToSync } from './lib/sync';
-import { useLocationTracking } from './lib/useLocationTracking';
+import { AuthProvider, useAuth } from './application/services/auth-service';
+import { Auth } from './presentation/components/Auth';
+import { subscribeToSync } from './infrastructure/sync/sync-service';
+import { useLocationTracking } from './application/hooks/use-location-tracking';
 import {
   ShieldAlert,
   Menu,
@@ -22,23 +21,21 @@ import {
   WifiOff,
   RefreshCw,
   Bell,
-  TrendingUp,
-  CreditCard,
-  AlertTriangle,
   Smartphone,
   MapPin
 } from 'lucide-react';
 
-const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
-const Inventory = lazy(() => import('./components/Inventory').then(m => ({ default: m.Inventory })));
-const Manufacturing = lazy(() => import('./components/Manufacturing').then(m => ({ default: m.Manufacturing })));
-const Sales = lazy(() => import('./components/Sales').then(m => ({ default: m.Sales })));
-const Purchases = lazy(() => import('./components/Purchases').then(m => ({ default: m.Purchases })));
-const Accounting = lazy(() => import('./components/Accounting').then(m => ({ default: m.Accounting })));
-const HR = lazy(() => import('./components/HR').then(m => ({ default: m.HR })));
-const Reports = lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
-const UsersDevices = lazy(() => import('./components/UsersDevices').then(m => ({ default: m.UsersDevices })));
-const RepTracking = lazy(() => import('./components/RepTracking').then(m => ({ default: m.RepTracking })));
+const Settings = lazy(() => import('./presentation/components/Settings').then(m => ({ default: m.Settings })));
+const Inventory = lazy(() => import('./presentation/pages/Inventory').then(m => ({ default: m.Inventory })));
+const Manufacturing = lazy(() => import('./presentation/components/Manufacturing').then(m => ({ default: m.Manufacturing })));
+const Sales = lazy(() => import('./presentation/components/Sales').then(m => ({ default: m.Sales })));
+const Purchases = lazy(() => import('./presentation/components/Purchases').then(m => ({ default: m.Purchases })));
+const Accounting = lazy(() => import('./presentation/components/Accounting').then(m => ({ default: m.Accounting })));
+const HR = lazy(() => import('./presentation/components/HR').then(m => ({ default: m.HR })));
+const Reports = lazy(() => import('./presentation/components/Reports').then(m => ({ default: m.Reports })));
+const UsersDevices = lazy(() => import('./presentation/components/UsersDevices').then(m => ({ default: m.UsersDevices })));
+const RepTracking = lazy(() => import('./presentation/components/RepTracking').then(m => ({ default: m.RepTracking })));
+const Dashboard = lazy(() => import('./presentation/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 
 const ModuleLoadingFallback = () => (
   <div className="flex items-center justify-center py-24 text-gray-500">
@@ -57,78 +54,17 @@ function ERPAppContent() {
   // Sync state
   const [syncState, setSyncState] = useState<any>(null);
 
-  // Dashboard Stats
-  const [stats, setStats] = useState({
-    todaySales: 0,
-    cashBank: 0,
-    lowStockCount: 0,
-    pendingSync: 0
-  });
-  const [lowStockItems, setLowStockItems] = useState<any[]>([]);
-
   useEffect(() => {
     if (user) {
-      loadDashboardStats();
-      const interval = setInterval(loadDashboardStats, 5000); // refresh stats
-
       const unsub = subscribeToSync((state) => {
         setSyncState(state);
       });
 
       return () => {
-        clearInterval(interval);
         unsub();
       };
     }
   }, [user]);
-
-  const loadDashboardStats = async () => {
-    try {
-      const itemsList = await db.items.toArray();
-      const movements = await db.stock_movements.toArray();
-      const invoices = await db.sales_invoices.toArray();
-      const transactions = await db.account_transactions.toArray();
-      const pendingSyncCount = await db.offline_queue.count();
-
-      // Today's Sales
-      const todayStr = new Date().toISOString().split('T')[0];
-      const todaySalesSum = invoices
-        .filter((inv: any) => inv.date === todayStr)
-        .reduce((sum, inv) => sum + Number(inv.total), 0);
-
-      // Cash & Bank balance from Transactions
-      const cashBankAccounts = await db.accounts
-        .filter((a: any) => a.category === 'cash' || a.category === 'bank')
-        .toArray();
-      const cashBankIds = cashBankAccounts.map(a => a.id);
-      const cashBankSum = transactions
-        .filter((tx: any) => cashBankIds.includes(tx.account_id))
-        .reduce((sum, tx) => sum + Number(tx.debit) - Number(tx.credit), 0);
-
-      // Low stock items
-      const lowStock: any[] = [];
-      let lowCount = 0;
-      for (const item of itemsList) {
-        const stock = movements
-          .filter((m: any) => m.item_id === item.id)
-          .reduce((sum, m) => sum + Number(m.qty), 0);
-        if (stock <= Number(item.reorder_level)) {
-          lowCount++;
-          lowStock.push({ ...item, stock });
-        }
-      }
-
-      setStats({
-        todaySales: todaySalesSum,
-        cashBank: cashBankSum,
-        lowStockCount: lowCount,
-        pendingSync: pendingSyncCount
-      });
-      setLowStockItems(lowStock.slice(0, 5));
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   if (!user) {
     return <Auth />;
@@ -349,104 +285,14 @@ function ERPAppContent() {
 
             <div className="relative">
               <Bell className="h-6 w-6 text-gray-400 hover:text-gray-600 cursor-pointer" />
-              {stats.lowStockCount > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 h-4.5 w-4.5 bg-red-500 rounded-full flex items-center justify-center text-[10px] font-bold text-white leading-none">
-                  {stats.lowStockCount}
-                </span>
-              )}
             </div>
           </div>
         </header>
 
         {/* Modules Body */}
         <main className="flex-1 bg-gray-50 overflow-y-auto">
-          {activeTab === 'dashboard' && (
-            <div className="p-6 max-w-7xl mx-auto space-y-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">نظرة عامة / Dashboard</h1>
-                  <p className="text-gray-500 text-sm mt-1">المؤشرات المالية والمخزنية لمصنع لواصق ختم الإطارات الجاري</p>
-                </div>
-              </div>
-
-              {/* Dashboard Grid Stats */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-gray-500">مبيعات اليوم الفعلية</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.todaySales.toFixed(2)} ج.م</div>
-                  </div>
-                  <div className="p-3 bg-green-50 text-green-600 rounded-full">
-                    <TrendingUp className="h-6 w-6" />
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-gray-500">السيولة النقدية المتاحة (كاش وبنك)</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.cashBank.toFixed(2)} ج.م</div>
-                  </div>
-                  <div className="p-3 bg-blue-50 text-blue-600 rounded-full">
-                    <CreditCard className="h-6 w-6" />
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-gray-500">تنبيهات نقص المخزون</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.lowStockCount} أصناف</div>
-                  </div>
-                  <div className="p-3 bg-red-50 text-red-600 rounded-full">
-                    <AlertTriangle className="h-6 w-6" />
-                  </div>
-                </div>
-
-                <div className="bg-white p-5 rounded-lg border shadow-sm flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-gray-500">العمليات بانتظار المزامنة</span>
-                    <div className="text-2xl font-black text-gray-900">{stats.pendingSync} عمليات</div>
-                  </div>
-                  <div className="p-3 bg-yellow-50 text-yellow-600 rounded-full">
-                    <RefreshCw className="h-6 w-6" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Low Stock Alerts Table */}
-              {lowStockItems.length > 0 && (
-                <div className="bg-white p-6 rounded-lg border shadow-sm">
-                  <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-1.5 text-sm text-red-600">
-                    <AlertTriangle className="h-5 w-5" />
-                    <span>تنبيه عاجل: أصناف قاربت على النفاد (حد إعادة الطلب):</span>
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 text-right text-sm">
-                      <thead className="bg-gray-50">
-                        <tr className="text-xs font-bold text-gray-500">
-                          <th className="py-3 px-4">اسم الصنف</th>
-                          <th className="py-3 px-4">نوع المادة</th>
-                          <th className="py-3 px-4 text-center">الرصيد الفعلي الحالي</th>
-                          <th className="py-3 px-4">حد الأمان المطلق</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {lowStockItems.map(item => (
-                          <tr key={item.id} className="hover:bg-gray-50 font-medium">
-                            <td className="py-3 px-4 text-red-700 font-bold">{item.name}</td>
-                            <td className="py-3 px-4 text-gray-600">{item.type}</td>
-                            <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{item.stock}</td>
-                            <td className="py-3 px-4 text-gray-500">{item.reorder_level}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           <Suspense fallback={<ModuleLoadingFallback />}>
+            {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'sales' && <Sales />}
             {activeTab === 'purchases' && <Purchases />}
             {activeTab === 'inventory' && <Inventory />}
