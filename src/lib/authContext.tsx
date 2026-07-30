@@ -83,7 +83,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       last_seen_at: new Date().toISOString()
     };
     localStorage.setItem('erp_profile', JSON.stringify(updated));
-    await queueOfflineWrite('users', 'update', updated.id, updated);
+    // role_name/permissions are derived client-side (joined from roles/role_permissions),
+    // not real columns on public.users — sending them makes PostgREST reject the
+    // whole write with PGRST204 ("column not found in schema cache").
+    const { role_name, permissions, ...userRow } = updated;
+    await queueOfflineWrite('users', 'update', userRow.id, userRow);
   };
 
   // Record app version / last-seen on login, then on a periodic heartbeat
