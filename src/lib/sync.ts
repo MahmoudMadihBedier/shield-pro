@@ -199,10 +199,31 @@ async function syncQueueItem(item: OfflineQueueItem) {
     addLog(`تم توليد الرقم التسلسلي للمزامنة: ${seqNo}`);
   }
 
+  // users.role_name / users.permissions are computed client-side (joined from
+  // roles / role_permissions) for offline permission checks and get cached
+  // locally alongside the real row — but they aren't actual columns on
+  // public.users, so PostgREST rejects the whole write if they're sent.
+  if (table_name === 'users') {
+    delete finalData.role_name;
+    delete finalData.permissions;
+  }
+
   // Push to Supabase
   if (action === 'insert' || action === 'update') {
     const { error } = await supabase.from(table_name).upsert(finalData);
-    if (error) throw error;
+    if (error) {
+      // 23505 = unique_violation. Another device already inserted an
+      // equivalent row (e.g. two devices both seeding the same default
+      // permission/role before either had pulled the other's write down).
+      // The desired end state — that row existing — is already satisfied,
+      // so treat it as done instead of retrying forever; the next pull
+      // reconciles this device's local copy with the authoritative row.
+      if (action === 'insert' && error.code === '23505') {
+        addLog(`تم تجاهل ${table_name}: السجل موجود بالفعل على السيرفر`);
+        return;
+      }
+      throw error;
+    }
   } else if (action === 'delete') {
     const { error } = await supabase.from(table_name).delete().eq('id', record_id);
     if (error) throw error;
