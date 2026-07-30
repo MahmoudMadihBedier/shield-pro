@@ -20,6 +20,12 @@ let currentUserId: string | null = null;
 // Called by authContext on sign-in/sign-out so writes can be attributed in the audit log
 export function setCurrentUserId(id: string | null) {
   currentUserId = id;
+  // Pull the latest server state as soon as we know who's logged in, instead of
+  // waiting for a manual Settings sync or for this user's own push to succeed.
+  if (id && navigator.onLine) {
+    pullFromServer();
+    triggerSync();
+  }
 }
 
 const AUDIT_EXCLUDED_TABLES = new Set(['audit_log', 'offline_queue']);
@@ -205,9 +211,15 @@ async function syncQueueItem(item: OfflineQueueItem) {
 
 let isSyncing = false;
 
-// Pull all latest data from Supabase
+let isPulling = false;
+
+// Pull all latest data from Supabase, merging it into the local cache without
+// clobbering records this device still has queued to push (an in-flight local
+// edit shouldn't disappear from the UI just because a periodic pull ran).
 export async function pullFromServer() {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine || isPulling) return;
+  isPulling = true;
+  try {
   addLog("بدء جلب البيانات الحديثة من السيرفر...");
   const tables = [
     'roles', 'users', 'permissions', 'role_permissions', 'customers',
@@ -224,14 +236,34 @@ export async function pullFromServer() {
   for (const t of tables) {
     try {
       const { data, error } = await supabase.from(t).select('*');
-      if (!error && data) {
-        const localTable = (db as any)[t];
-        if (localTable) {
-          await localTable.clear();
-          if (data.length > 0) {
-            await localTable.bulkPut(data);
-          }
-        }
+      if (error || !data) {
+        if (error) addLog(`فشل مزامنة جدول ${t} من السيرفر: ${error.message}`);
+        continue;
+      }
+
+      const localTable = (db as any)[t];
+      if (!localTable) continue;
+
+      const pendingIds = new Set(
+        (await db.offline_queue.where('table_name').equals(t).toArray()).map(i => i.record_id)
+      );
+
+      // Records this device deleted/updated/inserted locally but hasn't pushed
+      // yet keep their local version; the server copy will land once it syncs.
+      const toPut = data.filter((rec: any) => !pendingIds.has(rec.id));
+      if (toPut.length > 0) {
+        await localTable.bulkPut(toPut);
+      }
+
+      // Drop local records that no longer exist on the server (deleted by
+      // another user) — but never a record still pending local sync.
+      const serverIds = new Set(data.map((rec: any) => rec.id));
+      const localRecords = await localTable.toArray();
+      const staleIds = localRecords
+        .map((rec: any) => rec.id)
+        .filter((id: string) => !serverIds.has(id) && !pendingIds.has(id));
+      if (staleIds.length > 0) {
+        await localTable.bulkDelete(staleIds);
       }
     } catch (e: any) {
       addLog(`فشل مزامنة جدول ${t} من السيرفر: ${e.message}`);
@@ -242,6 +274,9 @@ export async function pullFromServer() {
   localStorage.setItem('lastSyncedAt', nowStr);
   updateSyncState({ lastSyncedAt: nowStr });
   addLog("تم جلب وتحديث جميع الجداول بنجاح!");
+  } finally {
+    isPulling = false;
+  }
 }
 
 // Push local queued writes to server
@@ -256,9 +291,16 @@ export async function triggerSync() {
   addLog("بدء مزامنة البيانات الصادرة...");
 
   try {
-    let queue = await db.offline_queue.orderBy('id').toArray();
-    while (queue.length > 0) {
-      const item = queue[0];
+    // Snapshot the queue for this pass and walk it in order. A record that
+    // fails to sync (e.g. a permission error, a stale reference) is skipped
+    // rather than aborting the run, so every OTHER unrelated pending write
+    // still reaches the server this pass instead of queuing up behind it
+    // forever. Failed items stay in the queue and are retried on the next
+    // pass (see the periodic retry timer below).
+    const queue = await db.offline_queue.orderBy('id').toArray();
+    let failureCount = 0;
+
+    for (const item of queue) {
       try {
         await syncQueueItem(item);
         if (item.id !== undefined) {
@@ -266,20 +308,22 @@ export async function triggerSync() {
         }
         addLog(`تمت مزامنة ${item.table_name} بنجاح`);
       } catch (err: any) {
-        addLog(`خطأ أثناء مزامنة ${item.table_name}: ${err.message}`);
-        updateSyncState({ status: 'error' });
-        isSyncing = false;
-        return;
+        failureCount++;
+        addLog(`خطأ أثناء مزامنة ${item.table_name} (سيعاد المحاولة لاحقاً): ${err.message}`);
       }
-      queue = await db.offline_queue.orderBy('id').toArray();
-      updateSyncState({ pendingCount: queue.length });
+      const remaining = await db.offline_queue.count();
+      updateSyncState({ pendingCount: remaining });
     }
 
-    addLog("تمت مزامنة جميع البيانات الصادرة بنجاح!");
-    updateSyncState({ status: 'online', pendingCount: 0 });
-
-    // After pushing, pull fresh copy of state
-    await pullFromServer();
+    if (failureCount === 0) {
+      addLog("تمت مزامنة جميع البيانات الصادرة بنجاح!");
+      updateSyncState({ status: 'online' });
+      // After a fully clean push, pull fresh copy of state
+      await pullFromServer();
+    } else {
+      addLog(`تعذرت مزامنة ${failureCount} عملية، سيتم إعادة المحاولة تلقائياً`);
+      updateSyncState({ status: 'error' });
+    }
   } catch (err: any) {
     addLog(`خطأ عام في المزامنة: ${err.message}`);
     updateSyncState({ status: 'error' });
@@ -300,4 +344,17 @@ if (typeof window !== 'undefined') {
     updateSyncState({ status: 'offline' });
     addLog("انقطع الاتصال بالشبكة. تعمل الآن في وضع الأوفلاين.");
   });
+
+  // No realtime subscriptions exist yet, so without polling a user only ever
+  // sees what was true when they logged in (or last pushed). Poll both
+  // directions on a timer: pull so other users' changes actually arrive, and
+  // retry the push queue so a transient failure doesn't stay stuck until the
+  // next manual write or reconnect event.
+  setInterval(() => {
+    if (navigator.onLine) pullFromServer();
+  }, 30_000);
+
+  setInterval(() => {
+    if (navigator.onLine) triggerSync();
+  }, 20_000);
 }
