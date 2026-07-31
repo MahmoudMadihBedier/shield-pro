@@ -339,9 +339,9 @@ if (typeof window !== 'undefined') {
   // next manual write or reconnect event.
   setInterval(() => {
     if (navigator.onLine) pullFromServer();
-  }, 30_000);
+  }, 120_000); // Increased from 30s to 2 minutes
 
   setInterval(() => {
     if (navigator.onLine) triggerSync();
-  }, 20_000);
+  }, 60_000); // Increased from 20s to 1 minute
 }

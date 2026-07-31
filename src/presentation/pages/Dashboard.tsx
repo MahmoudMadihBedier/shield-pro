@@ -7,17 +7,12 @@ import {
   CreditCard,
   AlertTriangle
 } from 'lucide-react';
-import { CardAnimation, ListItemAnimation } from '../components/ui/animations/CardAnimation';
+import { CardAnimation } from '../components/ui/animations/CardAnimation';
 import { useToast } from '../components/ui/Toast';
 
 export const Dashboard: React.FC = () => {
   const { stats, lowStockItems, loading, error, loadDashboardStats } = useDashboard();
   const { info } = useToast();
-
-  React.useEffect(() => {
-    const interval = setInterval(loadDashboardStats, 5000); // Refresh stats every 5 seconds
-    return () => clearInterval(interval);
-  }, [loadDashboardStats]);
 
   const handleRefresh = () => {
     loadDashboardStats();
@@ -156,22 +151,26 @@ export const Dashboard: React.FC = () => {
               <table className="min-w-full divide-y divide-gray-200 text-right text-sm">
                 <thead className="bg-gray-50">
                   <tr className="text-xs font-bold text-gray-500">
-                    <th className="py-3 px-4">اسم الصنف</th>
-                    <th className="py-3 px-4">نوع المادة</th>
+                    <th className="py-3 px-4 text-right">اسم الصنف</th>
+                    <th className="py-3 px-4 text-right">نوع المادة</th>
                     <th className="py-3 px-4 text-center">الرصيد الفعلي الحالي</th>
-                    <th className="py-3 px-4">حد الأمان المطلق</th>
+                    <th className="py-3 px-4 text-right">حد الأمان المطلق</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {lowStockItems.map((item: any, index: number) => (
-                    <ListItemAnimation key={item.id} index={index}>
-                      <tr className="hover:bg-red-50 font-medium transition-colors">
-                        <td className="py-3 px-4 text-red-700 font-bold">{item.name}</td>
-                        <td className="py-3 px-4 text-gray-600">{item.type}</td>
-                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{item.currentStock}</td>
-                        <td className="py-3 px-4 text-gray-500">{item.reorder_level}</td>
-                      </tr>
-                    </ListItemAnimation>
+                    <motion.tr
+                      key={item.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.05, ease: 'easeOut' }}
+                      className="hover:bg-red-50 font-medium transition-colors"
+                    >
+                      <td className="py-3 px-4 text-red-700 font-bold text-right">{item.name}</td>
+                      <td className="py-3 px-4 text-gray-600 text-right">{item.type}</td>
+                      <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{item.currentStock}</td>
+                      <td className="py-3 px-4 text-gray-500 text-right">{item.reorder_level}</td>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
