@@ -1,6 +1,8 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './application/services/auth-service';
 import { Auth } from './presentation/components/Auth';
+import { ToastProvider } from './presentation/components/ui/Toast';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
 import { useLocationTracking } from './application/hooks/use-location-tracking';
 import {
@@ -79,18 +81,33 @@ function ERPAppContent() {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row" dir="rtl">
       {/* Sidebar Navigation */}
-      <div className={`fixed inset-y-0 right-0 z-40 w-64 bg-gray-900 text-gray-100 transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0 ${
-        sidebarOpen ? 'translate-x-0' : 'translate-x-full'
-      }`}>
+      <motion.div 
+        initial={{ x: -260 }}
+        animate={{ x: sidebarOpen ? 0 : -260 }}
+        transition={{ duration: 0.3, ease: 'easeInOut' }}
+        className={`fixed inset-y-0 right-0 z-40 w-64 bg-gray-900 text-gray-100 md:relative md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
         {/* Sidebar Header */}
         <div className="h-16 flex items-center justify-between px-6 bg-gray-950 border-b border-gray-800">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="h-7 w-7 text-blue-500" />
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            >
+              <ShieldAlert className="h-7 w-7 text-blue-500" />
+            </motion.div>
             <span className="font-extrabold text-lg text-white">شيلد برو ERP</span>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden text-gray-400 hover:text-white">
+          <motion.button 
+            onClick={() => setSidebarOpen(false)} 
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            className="md:hidden text-gray-400 hover:text-white"
+          >
             <X className="h-6 w-6" />
-          </button>
+          </motion.button>
         </div>
 
         {/* Sidebar Profile Card */}
@@ -102,154 +119,188 @@ function ERPAppContent() {
 
         {/* Sidebar Links */}
         <div className="flex-1 px-4 py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)]">
-          <button
+          <motion.button
             onClick={() => setActiveTab('dashboard')}
+            whileHover={{ scale: 1.02, x: 4 }}
+            whileTap={{ scale: 0.98 }}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
               activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
             }`}
           >
             <LayoutDashboard className="h-5 w-5" />
             <span>لوحة التحكم والمؤشرات</span>
-          </button>
+          </motion.button>
 
           {checkPermission('sales', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('sales')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'sales' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <ShoppingCart className="h-5 w-5" />
               <span>المبيعات والعملاء</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('purchases', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('purchases')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'purchases' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <Users className="h-5 w-5" />
               <span>المشتريات والموردين</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('inventory', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('inventory')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <Package className="h-5 w-5" />
               <span>المخزون والمستودعات</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('manufacturing', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('manufacturing')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'manufacturing' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <Layers className="h-5 w-5" />
               <span>التصنيع والتركيبات</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('accounting', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('accounting')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'accounting' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <DollarSign className="h-5 w-5" />
               <span>الحسابات والمالية</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('hr', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('hr')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'hr' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <Briefcase className="h-5 w-5" />
               <span>الموظفين والرواتب</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('reports', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('reports')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'reports' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <BarChart3 className="h-5 w-5" />
               <span>التقارير والتحليلات</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('user_tracking', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('users')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'users' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <Smartphone className="h-5 w-5" />
               <span>المستخدمون والأجهزة</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('gps_tracking', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('gps')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'gps' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <MapPin className="h-5 w-5" />
               <span>تتبع المندوبين</span>
-            </button>
+            </motion.button>
           )}
 
           {checkPermission('settings', 'view') && (
-            <button
+            <motion.button
               onClick={() => setActiveTab('settings')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
                 activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
               }`}
             >
               <SettingsIcon className="h-5 w-5" />
               <span>الإعدادات والصلاحيات</span>
-            </button>
+            </motion.button>
           )}
 
-          <button
+          <motion.button
             onClick={handleLogout}
+            whileHover={{ scale: 1.02, x: 4 }}
+            whileTap={{ scale: 0.98 }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold text-red-400 hover:bg-red-950/30 hover:text-red-300 transition"
           >
             <LogOut className="h-5 w-5" />
             <span>تسجيل الخروج</span>
-          </button>
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main App Content Area */}
-      <div className="flex-1 flex flex-col min-h-screen">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+        className="flex-1 flex flex-col min-h-screen"
+      >
         {/* Header Bar */}
         <header className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm sticky top-0 z-30">
           <div className="flex items-center gap-4">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden text-gray-500 hover:text-gray-700">
+            <motion.button 
+              onClick={() => setSidebarOpen(true)} 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="md:hidden text-gray-500 hover:text-gray-700"
+            >
               <Menu className="h-6 w-6" />
-            </button>
+            </motion.button>
             <div className="hidden md:block font-bold text-gray-800 text-sm">
               نظام إدارة المنشأة الموحد (ERP)
             </div>
@@ -292,29 +343,143 @@ function ERPAppContent() {
         {/* Modules Body */}
         <main className="flex-1 bg-gray-50 overflow-y-auto">
           <Suspense fallback={<ModuleLoadingFallback />}>
-            {activeTab === 'dashboard' && <Dashboard />}
-            {activeTab === 'sales' && <Sales />}
-            {activeTab === 'purchases' && <Purchases />}
-            {activeTab === 'inventory' && <Inventory />}
-            {activeTab === 'manufacturing' && <Manufacturing />}
-            {activeTab === 'accounting' && <Accounting />}
-            {activeTab === 'hr' && <HR />}
-            {activeTab === 'reports' && <Reports />}
-            {activeTab === 'users' && <UsersDevices />}
-            {activeTab === 'gps' && <RepTracking />}
-            {activeTab === 'settings' && <Settings />}
+            <AnimatePresence mode="wait">
+              {activeTab === 'dashboard' && (
+                <motion.div
+                  key="dashboard"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Dashboard />
+                </motion.div>
+              )}
+              {activeTab === 'sales' && (
+                <motion.div
+                  key="sales"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Sales />
+                </motion.div>
+              )}
+              {activeTab === 'purchases' && (
+                <motion.div
+                  key="purchases"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Purchases />
+                </motion.div>
+              )}
+              {activeTab === 'inventory' && (
+                <motion.div
+                  key="inventory"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Inventory />
+                </motion.div>
+              )}
+              {activeTab === 'manufacturing' && (
+                <motion.div
+                  key="manufacturing"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Manufacturing />
+                </motion.div>
+              )}
+              {activeTab === 'accounting' && (
+                <motion.div
+                  key="accounting"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Accounting />
+                </motion.div>
+              )}
+              {activeTab === 'hr' && (
+                <motion.div
+                  key="hr"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <HR />
+                </motion.div>
+              )}
+              {activeTab === 'reports' && (
+                <motion.div
+                  key="reports"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Reports />
+                </motion.div>
+              )}
+              {activeTab === 'users' && (
+                <motion.div
+                  key="users"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <UsersDevices />
+                </motion.div>
+              )}
+              {activeTab === 'gps' && (
+                <motion.div
+                  key="gps"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <RepTracking />
+                </motion.div>
+              )}
+              {activeTab === 'settings' && (
+                <motion.div
+                  key="settings"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Settings />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </Suspense>
         </main>
-      </div>
+      </motion.div>
     </div>
   );
-}
+};
 
 function App() {
   return (
-    <AuthProvider>
-      <ERPAppContent />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <ERPAppContent />
+      </AuthProvider>
+    </ToastProvider>
   );
 }
 
