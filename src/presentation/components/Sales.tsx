@@ -6,7 +6,7 @@ import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
 import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
 import { useToast } from './ui/Toast';
 import { FormField } from './ui/ValidationMessage';
-import { CardAnimation, ListItemAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
+import { CardAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
 import {
   Users,
   Plus,
@@ -655,20 +655,24 @@ export const Sales: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
                   {customers.map((c, index) => (
-                    <ListItemAnimation key={c.id} index={index}>
-                      <tr className="hover:bg-blue-50 transition-colors cursor-pointer">
-                        <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
-                        <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
-                        <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
-                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
-                          {(
-                            Number(c.opening_balance) +
-                            salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
-                            receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                          ).toFixed(2)} ج.م
-                        </td>
-                      </tr>
-                    </ListItemAnimation>
+                    <motion.tr
+                      key={c.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.05, ease: 'easeOut' }}
+                      className="hover:bg-blue-50 transition-colors cursor-pointer"
+                    >
+                      <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
+                      <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
+                      <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
+                      <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
+                        {(
+                          Number(c.opening_balance) +
+                          salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
+                          receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
+                        ).toFixed(2)} ج.م
+                      </td>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
@@ -976,15 +980,19 @@ export const Sales: React.FC = () => {
                     const cName = customers.find(c => c.id === v.customer_id)?.name || '';
                     const accName = accounts.find(a => a.id === v.account_id)?.name || '';
                     return (
-                      <ListItemAnimation key={v.id} index={index}>
-                        <tr className="hover:bg-green-50 transition-colors cursor-pointer">
-                          <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
-                          <td className="py-3 px-4 text-gray-700">{cName}</td>
-                          <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
-                          <td className="py-3 px-4 text-gray-600">{accName}</td>
-                          <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
-                        </tr>
-                      </ListItemAnimation>
+                      <motion.tr
+                        key={v.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.3, delay: index * 0.05, ease: 'easeOut' }}
+                        className="hover:bg-green-50 transition-colors cursor-pointer"
+                      >
+                        <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
+                        <td className="py-3 px-4 text-gray-700">{cName}</td>
+                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
+                        <td className="py-3 px-4 text-gray-600">{accName}</td>
+                        <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
+                      </motion.tr>
                     );
                   })}
                 </tbody>
@@ -1065,15 +1073,19 @@ export const Sales: React.FC = () => {
               <tbody className="divide-y divide-gray-100 text-sm">
                 {statementRecords.length > 0 ? (
                   statementRecords.map((rec, idx) => (
-                    <ListItemAnimation key={idx} index={idx}>
-                      <tr className="hover:bg-blue-50 transition-colors cursor-pointer">
-                        <td className="py-3 px-4 text-gray-700">{rec.date}</td>
-                        <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
-                        <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
-                        <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
-                        <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
-                      </tr>
-                    </ListItemAnimation>
+                    <motion.tr
+                      key={idx}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: idx * 0.05, ease: 'easeOut' }}
+                      className="hover:bg-blue-50 transition-colors cursor-pointer"
+                    >
+                      <td className="py-3 px-4 text-gray-700">{rec.date}</td>
+                      <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
+                      <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
+                      <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
+                    </motion.tr>
                   ))
                 ) : (
                   <tr>
