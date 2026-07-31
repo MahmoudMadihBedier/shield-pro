@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { db } from '../../infrastructure/database/dexie';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
 import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
+import { useToast } from './ui/Toast';
+import { FormField } from './ui/ValidationMessage';
+import { CardAnimation, ListItemAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
 import {
   Users,
   Plus,
@@ -14,6 +18,8 @@ import {
 } from 'lucide-react';
 
 export const Sales: React.FC = () => {
+  const { success, error, warning } = useToast();
+  
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
 
@@ -102,7 +108,10 @@ export const Sales: React.FC = () => {
   // Add Customer
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!custName.trim()) return;
+    if (!custName.trim()) {
+      error('يرجى إدخال اسم العميل');
+      return;
+    }
 
     try {
       const id = crypto.randomUUID();
@@ -120,9 +129,9 @@ export const Sales: React.FC = () => {
       setCustAddress('');
       setCustOpening('0');
       await loadData();
-      alert('تم تسجيل العميل بنجاح!');
+      success('تم تسجيل العميل بنجاح!');
     } catch (e: any) {
-      alert(e.message);
+      error(e.message || 'فشل تسجيل العميل');
     }
   };
 
@@ -177,7 +186,7 @@ export const Sales: React.FC = () => {
   };
 
   const handleScanNotFound = (code: string) => {
-    alert(`لم يتم العثور على صنف بهذا الباركود: ${code}`);
+    warning(`لم يتم العثور على صنف بهذا الباركود: ${code}`);
   };
 
   const getPackagingBomFor = (itemId: string) => packagingRecipes.filter((r: any) => r.parent_item_id === itemId);
@@ -207,7 +216,7 @@ export const Sales: React.FC = () => {
   const handleSaveInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invCustomer || !invWarehouse || invLines.some((l: any) => !l.item_id)) {
-      alert('يرجى التحقق من تحديد العميل ومخزن الصرف وتعبئة كافة البنود.');
+      error('يرجى التحقق من تحديد العميل ومخزن الصرف وتعبئة كافة البنود.');
       return;
     }
 
@@ -328,16 +337,19 @@ export const Sales: React.FC = () => {
       setInvDiscount('0');
       setInvLines([{ item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
       await loadData();
-      alert('تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
+      success('تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
     } catch (e: any) {
-      alert(e.message);
+      error(e.message || 'فشل حفظ الفاتورة');
     }
   };
 
   // Receipt Vouchers
   const handleSaveReceiptVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!vouchCustomer || !vouchAmount || !vouchAccountId) return;
+    if (!vouchCustomer || !vouchAmount || !vouchAccountId) {
+      error('يرجى تعبئة جميع الحقول المطلوبة');
+      return;
+    }
 
     try {
       const vId = crypto.randomUUID();
@@ -404,9 +416,9 @@ export const Sales: React.FC = () => {
       setVouchAmount('0');
       setVouchInvoiceId('');
       await loadData();
-      alert('تم حفظ سند القبض وتحديث حسابات العميل بنجاح!');
+      success('تم حفظ سند القبض وتحديث حسابات العميل بنجاح!');
     } catch (err: any) {
-      alert(err.message);
+      error(err.message || 'فشل حفظ سند القبض');
     }
   };
 
@@ -484,7 +496,12 @@ export const Sales: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto" dir="rtl">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-6 max-w-7xl mx-auto" 
+      dir="rtl"
+    >
       <div className="mb-6 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">المبيعات والعملاء والسندات / Sales</h1>
@@ -494,109 +511,138 @@ export const Sales: React.FC = () => {
 
       {/* Navigation tabs */}
       <div className="flex border-b border-gray-200 mb-6 bg-white rounded-lg p-1 shadow-sm">
-        <button
+        <motion.button
           onClick={() => setActiveSubTab('invoices')}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
             activeSubTab === 'invoices' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <FileText className="h-4 w-4" />
           <span>فاتورة مبيعات جديدة</span>
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           onClick={() => setActiveSubTab('vouchers')}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
             activeSubTab === 'vouchers' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <Receipt className="h-4 w-4" />
           <span>سند قبض مالي (سند قبض)</span>
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           onClick={() => setActiveSubTab('customers')}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
             activeSubTab === 'customers' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <Users className="h-4 w-4" />
           <span>قائمة وملفات العملاء</span>
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           onClick={() => {
             setActiveSubTab('statement');
             runCustomerStatement();
           }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
             activeSubTab === 'statement' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <TrendingUp className="h-4 w-4" />
           <span>كشف حساب عميل تفصيلي</span>
-        </button>
+        </motion.button>
       </div>
 
       {activeSubTab === 'customers' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Customer Add Form */}
-          <div className="bg-white p-5 rounded-lg border shadow h-fit">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">ملف عميل جديد</h3>
-            <form onSubmit={handleAddCustomer} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">اسم العميل / الشركة</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="شركة الوفاق لصيانة الإطارات"
-                  value={custName}
-                  onChange={(e) => setCustName(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none"
-                />
-              </div>
+        <TabContentAnimation>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Customer Add Form */}
+            <CardAnimation delay={0.1}>
+              <div className="bg-white p-5 rounded-lg border shadow h-fit">
+                <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  ملف عميل جديد
+                </h3>
+                <form onSubmit={handleAddCustomer} className="space-y-4">
+                  <FormField
+                    label="اسم العميل / الشركة"
+                    required
+                    helpText="الاسم الظاهر في الفواتير والتقارير"
+                  >
+                    <input
+                      type="text"
+                      required
+                      placeholder="شركة الوفاق لصيانة الإطارات"
+                      value={custName}
+                      onChange={(e) => setCustName(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </FormField>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">رقم الهاتف</label>
-                <input
-                  type="text"
-                  placeholder="0512345678"
-                  value={custPhone}
-                  onChange={(e) => setCustPhone(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none"
-                />
-              </div>
+                  <FormField
+                    label="رقم الهاتف"
+                    helpText="للتواصل والمراسلات"
+                  >
+                    <input
+                      type="text"
+                      placeholder="0512345678"
+                      value={custPhone}
+                      onChange={(e) => setCustPhone(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </FormField>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">العنوان</label>
-                <input
-                  type="text"
-                  placeholder="القاهرة، مدينة نصر"
-                  value={custAddress}
-                  onChange={(e) => setCustAddress(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none"
-                />
-              </div>
+                  <FormField
+                    label="العنوان"
+                    helpText="عنوان الفاتورة والتوصيل"
+                  >
+                    <input
+                      type="text"
+                      placeholder="القاهرة، مدينة نصر"
+                      value={custAddress}
+                      onChange={(e) => setCustAddress(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </FormField>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الرصيد الافتتاحي (مدين ج.م)</label>
-                <input
-                  type="number"
-                  value={custOpening}
-                  onChange={(e) => setCustOpening(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none"
-                />
-              </div>
+                  <FormField
+                    label="الرصيد الافتتاحي (مدين ج.م)"
+                    helpText="الرصيد الافتتاحي للعميل عند التسجيل"
+                  >
+                    <input
+                      type="number"
+                      value={custOpening}
+                      onChange={(e) => setCustOpening(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </FormField>
 
-              <button
-                type="submit"
-                className="w-full flex justify-center py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition"
-              >
-                حفظ العميل
-              </button>
-            </form>
-          </div>
+                  <motion.button
+                    type="submit"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full flex justify-center py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition shadow-md"
+                  >
+                    حفظ العميل
+                  </motion.button>
+                </form>
+              </div>
+            </CardAnimation>
 
           {/* Customers List */}
-          <div className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">العملاء المسجلين</h3>
+          <CardAnimation delay={0.2} className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
+            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-600" />
+              العملاء المسجلين
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">{customers.length}</span>
+            </h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-right">
                 <thead className="bg-gray-50">
@@ -608,32 +654,39 @@ export const Sales: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
-                  {customers.map(c => (
-                    <tr key={c.id} className="hover:bg-gray-50">
-                      <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
-                      <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
-                      <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
-                      <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
-                        {(
-                          Number(c.opening_balance) +
-                          salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
-                          receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        ).toFixed(2)} ج.م
-                      </td>
-                    </tr>
+                  {customers.map((c, index) => (
+                    <ListItemAnimation key={c.id} index={index}>
+                      <tr className="hover:bg-blue-50 transition-colors cursor-pointer">
+                        <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
+                        <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
+                        <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
+                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
+                          {(
+                            Number(c.opening_balance) +
+                            salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
+                            receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
+                          ).toFixed(2)} ج.م
+                        </td>
+                      </tr>
+                    </ListItemAnimation>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </CardAnimation>
         </div>
+        </TabContentAnimation>
       )}
 
       {activeSubTab === 'invoices' && (
-        <form onSubmit={handleSaveInvoice} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Invoice Lines Table */}
-          <div className="lg:col-span-3 bg-white p-6 rounded-lg border shadow">
-            <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-6">تحرير فاتورة مبيعات جديدة</h3>
+        <TabContentAnimation>
+          <form onSubmit={handleSaveInvoice} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            {/* Invoice Lines Table */}
+            <CardAnimation delay={0.1} className="lg:col-span-3 bg-white p-6 rounded-lg border shadow">
+              <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
+                <FileText className="h-5 w-5 text-blue-600" />
+                تحرير فاتورة مبيعات جديدة
+              </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-gray-50 p-4 rounded border">
               <div>
@@ -773,10 +826,10 @@ export const Sales: React.FC = () => {
                 </div>
               ))}
             </div>
-          </div>
+          </CardAnimation>
 
           {/* Invoice Summary and Submit */}
-          <div className="bg-white p-5 rounded-lg border shadow h-fit space-y-6">
+          <CardAnimation delay={0.2} className="bg-white p-5 rounded-lg border shadow h-fit space-y-6">
             <h3 className="font-bold text-gray-800 border-b pb-2">ملخص الحساب والفاتورة</h3>
             <div className="space-y-3 text-sm">
               <div className="flex justify-between text-gray-600">
@@ -809,21 +862,28 @@ export const Sales: React.FC = () => {
               </div>
             </div>
 
-            <button
+            <motion.button
               type="submit"
-              className="w-full flex justify-center py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-bold text-sm transition"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="w-full flex justify-center py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-bold text-sm transition shadow-md"
             >
               حفظ واعتماد الفاتورة (Save)
-            </button>
-          </div>
-        </form>
+            </motion.button>
+          </CardAnimation>
+          </form>
+        </TabContentAnimation>
       )}
 
       {activeSubTab === 'vouchers' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Create receipt voucher */}
-          <div className="bg-white p-5 rounded-lg border shadow h-fit">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">إنشاء سند قبض مالي جديد</h3>
+        <TabContentAnimation>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Create receipt voucher */}
+            <CardAnimation delay={0.1} className="bg-white p-5 rounded-lg border shadow h-fit">
+              <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+                <Receipt className="h-5 w-5 text-blue-600" />
+                إنشاء سند قبض مالي جديد
+              </h3>
             <form onSubmit={handleSaveReceiptVoucher} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-600 mb-1">العميل الدافع</label>
@@ -882,18 +942,24 @@ export const Sales: React.FC = () => {
                 />
               </div>
 
-              <button
+              <motion.button
                 type="submit"
-                className="w-full flex justify-center py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-xs transition"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full flex justify-center py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-xs transition shadow-md"
               >
                 توليد واعتماد سند القبض
-              </button>
+              </motion.button>
             </form>
-          </div>
+          </CardAnimation>
 
           {/* Receipt Vouchers List */}
-          <div className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">سجل السندات المالية الصادرة</h3>
+          <CardAnimation delay={0.2} className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
+            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-green-600" />
+              سجل السندات المالية الصادرة
+              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">{receiptVouchers.length}</span>
+            </h3>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 text-right">
                 <thead className="bg-gray-50">
@@ -906,31 +972,35 @@ export const Sales: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
-                  {receiptVouchers.map(v => {
+                  {receiptVouchers.map((v, index) => {
                     const cName = customers.find(c => c.id === v.customer_id)?.name || '';
                     const accName = accounts.find(a => a.id === v.account_id)?.name || '';
                     return (
-                      <tr key={v.id} className="hover:bg-gray-50">
-                        <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
-                        <td className="py-3 px-4 text-gray-700">{cName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
-                        <td className="py-3 px-4 text-gray-600">{accName}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
-                      </tr>
+                      <ListItemAnimation key={v.id} index={index}>
+                        <tr className="hover:bg-green-50 transition-colors cursor-pointer">
+                          <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
+                          <td className="py-3 px-4 text-gray-700">{cName}</td>
+                          <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
+                          <td className="py-3 px-4 text-gray-600">{accName}</td>
+                          <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
+                        </tr>
+                      </ListItemAnimation>
                     );
                   })}
                 </tbody>
               </table>
             </div>
-          </div>
+          </CardAnimation>
         </div>
+        </TabContentAnimation>
       )}
 
       {activeSubTab === 'statement' && (
-        <div className="bg-white p-6 rounded-lg border shadow">
-          <div className="border-b pb-4 mb-6">
-            <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-blue-600" />
+        <TabContentAnimation>
+          <CardAnimation className="bg-white p-6 rounded-lg border shadow">
+            <div className="border-b pb-4 mb-6">
+              <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-blue-600" />
               <span>كشف حساب عميل تفصيلي (Statement of Account)</span>
             </h3>
             <p className="text-xs text-gray-500 mt-1">تتبع الحركات المالية الجارية للعملاء ومطابقة الأرصدة</p>
@@ -995,13 +1065,15 @@ export const Sales: React.FC = () => {
               <tbody className="divide-y divide-gray-100 text-sm">
                 {statementRecords.length > 0 ? (
                   statementRecords.map((rec, idx) => (
-                    <tr key={idx} className="hover:bg-gray-50">
-                      <td className="py-3 px-4 text-gray-700">{rec.date}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
-                      <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
-                    </tr>
+                    <ListItemAnimation key={idx} index={idx}>
+                      <tr className="hover:bg-blue-50 transition-colors cursor-pointer">
+                        <td className="py-3 px-4 text-gray-700">{rec.date}</td>
+                        <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
+                        <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
+                        <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
+                        <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
+                      </tr>
+                    </ListItemAnimation>
                   ))
                 ) : (
                   <tr>
@@ -1013,8 +1085,9 @@ export const Sales: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </CardAnimation>
+        </TabContentAnimation>
       )}
-    </div>
+    </motion.div>
   );
 };
