@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { db } from '../../infrastructure/database/dexie';
-import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
+import { formatCurrency, formatDate } from '../../shared/utils/format';
+import { getErrorMessage } from '../../shared/utils/errors';
+import { useCustomers, useSalesInvoices, useReceiptVouchers, useCustomerStatement } from '../../application/hooks/use-sales';
+import { useAccounts } from '../../application/hooks/use-accounting';
+import { useInventory } from '../../application/hooks/use-inventory';
+import { useRecipes } from '../../application/hooks/use-manufacturing';
+import { Warehouse } from '../../core/domain/entities';
+import { PaginationParams, EntityFilter } from '../../core/types';
 import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
 import { useToast } from './ui/Toast';
 import { FormField } from './ui/ValidationMessage';
@@ -17,22 +24,47 @@ import {
   Boxes
 } from 'lucide-react';
 
+// Stable references (not recreated per render) so the data hooks below don't
+// re-fetch in a loop — their internal useCallback/useEffect deps include
+// these filter/params objects by identity.
+const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
+const PACKAGING_RECIPE_FILTER: EntityFilter = { recipe_type: 'packaging' };
+
 export const Sales: React.FC = () => {
   const { success, error, warning } = useToast();
-  
+
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
 
-  // Master lists
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [salesInvoices, setSalesInvoices] = useState<any[]>([]);
-  const [salesReturns, setSalesReturns] = useState<any[]>([]);
-  const [receiptVouchers, setReceiptVouchers] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [itemNamesById, setItemNamesById] = useState<{ [id: string]: string }>({});
-  const [packagingRecipes, setPackagingRecipes] = useState<any[]>([]);
+  // Data, sourced from the service/hook layer instead of Dexie directly.
+  const { customers: customersResult, createCustomer } = useCustomers();
+  const customers = customersResult.data;
+
+  const { invoices: salesInvoicesResult, createInvoice } = useSalesInvoices(undefined, UNPAGINATED);
+  const salesInvoices = salesInvoicesResult.data;
+
+  const { vouchers: receiptVouchersResult, createReceiptVoucher } = useReceiptVouchers(undefined, UNPAGINATED);
+  const receiptVouchers = receiptVouchersResult.data;
+
+  const { accounts: accountsResult } = useAccounts();
+  const accounts = accountsResult.data;
+
+  const { items: allItemsResult } = useInventory(undefined, UNPAGINATED);
+  const allItems = allItemsResult.data;
+  const items = allItems.filter((i) => i.type === 'finished_good');
+  const itemNamesById = Object.fromEntries(allItems.map((i) => [i.id, i.name]));
+
+  const { recipes: packagingRecipesResult } = useRecipes(PACKAGING_RECIPE_FILTER, UNPAGINATED);
+  const packagingRecipes = packagingRecipesResult.data;
+
+  const { statement: statementRecords, loadStatement } = useCustomerStatement();
+
+  // No dedicated warehouse service/hook yet — matches the same direct
+  // RepositoryFactory usage Inventory.tsx already uses for the same reason.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  useEffect(() => {
+    RepositoryFactory.getWarehouseRepository().findActive().then(setWarehouses);
+  }, []);
 
   // 1. Customer State
   const [custName, setCustName] = useState('');
@@ -62,48 +94,41 @@ export const Sales: React.FC = () => {
   const [statementCustId, setStatementCustId] = useState('');
   const [statementStart, setStatementStartDate] = useState('');
   const [statementEnd, setStatementEndDate] = useState('');
-  const [statementRecords, setStatementRecords] = useState<any[]>([]);
+
+  // Default selections, once each list has loaded (mirrors the old loadData()
+  // one-time defaulting, but reactive to each hook's own load instead of a
+  // single combined fetch).
+  useEffect(() => {
+    if (customers.length > 0 && !invCustomer) {
+      setInvCustomer(customers[0].id);
+      setVouchCustomer(customers[0].id);
+      setStatementCustId(customers[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customers]);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const listCusts = await db.customers.toArray();
-    const listAllItems = await db.items.toArray();
-    const listItems = listAllItems.filter((i: any) => i.type === 'finished_good');
-    const listInvs = await db.sales_invoices.toArray();
-    const listRets = await db.sales_returns.toArray();
-    const listVouch = await db.receipt_vouchers.toArray();
-    const listWh = await db.warehouses.filter((w: any) => w.is_active).toArray();
-    const listAccs = await db.accounts.toArray();
-    const listRecipes = await db.item_recipes.filter((r: any) => r.recipe_type === 'packaging').toArray();
-
-    setCustomers(listCusts);
-    setItems(listItems);
-    setSalesInvoices(listInvs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-    setSalesReturns(listRets);
-    setReceiptVouchers(listVouch);
-    setWarehouses(listWh);
-    setAccounts(listAccs);
-    setPackagingRecipes(listRecipes);
-    setItemNamesById(Object.fromEntries(listAllItems.map((i: any) => [i.id, i.name])));
-
-    if (listCusts.length > 0) {
-      setInvCustomer(listCusts[0].id);
-      setVouchCustomer(listCusts[0].id);
-      setStatementCustId(listCusts[0].id);
+    if (warehouses.length > 0 && !invWarehouse) {
+      setInvWarehouse(warehouses[0].id);
     }
-    if (listWh.length > 0) setInvWarehouse(listWh[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouses]);
 
-    // Load Cash/Bank account for vouchers
-    const financial = listAccs.filter((a: any) => a.category === 'cash' || a.category === 'bank');
-    if (financial.length > 0) setVouchAccountId(financial[0].id);
+  useEffect(() => {
+    const financial = accounts.filter((a) => a.category === 'cash' || a.category === 'bank');
+    if (financial.length > 0 && !vouchAccountId) {
+      setVouchAccountId(financial[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
 
-    setVatEnabled(await getSettingBool('vat_enabled', false));
-    setVatPct(Number(await getSetting('default_vat_pct', '14')));
-    setLineDiscountAllowed(await getSettingBool('discount_lines_enabled', true));
-  };
+  useEffect(() => {
+    (async () => {
+      setVatEnabled(await getSettingBool('vat_enabled', false));
+      setVatPct(Number(await getSetting('default_vat_pct', '14')));
+      setLineDiscountAllowed(await getSettingBool('discount_lines_enabled', true));
+    })();
+  }, []);
 
   // Add Customer
   const handleAddCustomer = async (e: React.FormEvent) => {
@@ -114,24 +139,19 @@ export const Sales: React.FC = () => {
     }
 
     try {
-      const id = crypto.randomUUID();
-      const custObj = {
-        id,
+      await createCustomer({
         name: custName.trim(),
-        phone: custPhone.trim() || null,
-        address: custAddress.trim() || null,
-        opening_balance: Number(custOpening),
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('customers', 'insert', id, custObj);
+        phone: custPhone.trim() || undefined,
+        address: custAddress.trim() || undefined,
+        opening_balance: Number(custOpening)
+      });
       setCustName('');
       setCustPhone('');
       setCustAddress('');
       setCustOpening('0');
-      await loadData();
       success('تم تسجيل العميل بنجاح!');
-    } catch (e: any) {
-      error(e.message || 'فشل تسجيل العميل');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تسجيل العميل'));
     }
   };
 
@@ -189,7 +209,7 @@ export const Sales: React.FC = () => {
     warning(`لم يتم العثور على صنف بهذا الباركود: ${code}`);
   };
 
-  const getPackagingBomFor = (itemId: string) => packagingRecipes.filter((r: any) => r.parent_item_id === itemId);
+  const getPackagingBomFor = (itemId: string) => packagingRecipes.filter((r) => r.parent_item_id === itemId);
 
   const handleRemoveInvoiceLine = (index: number) => {
     const updated = [...invLines];
@@ -212,7 +232,8 @@ export const Sales: React.FC = () => {
     setInvLines(updated);
   };
 
-  // Create Invoice
+  // Create Invoice — stock deduction and journal-entry posting now happen
+  // inside SalesService.createInvoice instead of here.
   const handleSaveInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invCustomer || !invWarehouse || invLines.some((l: any) => !l.item_id)) {
@@ -221,129 +242,50 @@ export const Sales: React.FC = () => {
     }
 
     try {
-      const invId = crypto.randomUUID();
       const sub = calculateInvoiceSubtotal();
       const disc = Number(invDiscount) || 0;
       const tax = calculateInvoiceTax(sub);
       const total = calculateInvoiceTotal();
 
-      // Sequential temporary invoice no for offline
-      const tempNo = `PENDING-INV-${Date.now()}`;
-
-      // 1. Create Sales Invoice Record
-      const invoiceObj = {
-        id: invId,
-        invoice_no: tempNo,
-        customer_id: invCustomer,
-        date: new Date().toISOString().split('T')[0],
-        payment_method: invPaymentMethod,
-        subtotal: sub,
-        discount: disc,
-        tax: tax,
-        total: total,
-        status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('sales_invoices', 'insert', invId, invoiceObj);
-
-      // 2. Save Invoice Lines & Deduct stock via Movements
-      for (const line of invLines) {
-        const lineId = crypto.randomUUID();
-        const lQty = Number(line.qty) || 0;
-        const lPrice = Number(line.unit_price) || 0;
-        const lDisc = Number(line.discount) || 0;
-        const lineTotal = (lQty * lPrice) - lDisc;
-
-        const lineObj = {
-          id: lineId,
-          invoice_id: invId,
-          item_id: line.item_id,
-          qty: lQty,
-          unit_price: lPrice,
-          discount: lDisc,
-          line_total: lineTotal,
-          created_at: new Date().toISOString()
-        };
-        await queueOfflineWrite('sales_invoice_lines', 'insert', lineId, lineObj);
-
-        // Deduct finished goods stock movement
-        const movId = crypto.randomUUID();
-        const movObj = {
-          id: movId,
-          item_id: line.item_id,
+      await createInvoice(
+        {
+          invoice_no: `PENDING-INV-${Date.now()}`,
+          customer_id: invCustomer,
           warehouse_id: invWarehouse,
-          batch_no: tempNo,
-          movement_type: 'sale_out',
-          qty: -lQty,
-          ref_table: 'sales_invoices',
-          ref_id: invId,
-          moved_at: new Date().toISOString()
-        };
-        await queueOfflineWrite('stock_movements', 'insert', movId, movObj);
-      }
-
-      // 3. Accounting Transactions
-      const revenueAcc = accounts.find((a: any) => a.category === 'revenue')?.id;
-      const arAcc = accounts.find((a: any) => a.category === 'ar')?.id;
-      const cashAcc = accounts.find((a: any) => a.category === 'cash')?.id;
-
-      if (invPaymentMethod === 'cash' && cashAcc && revenueAcc) {
-        // Debit Cash, Credit Revenue
-        const txId1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', txId1, {
-          id: txId1,
-          account_id: cashAcc,
-          ref_table: 'sales_invoices',
-          ref_id: invId,
-          debit: total,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const txId2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', txId2, {
-          id: txId2,
-          account_id: revenueAcc,
-          ref_table: 'sales_invoices',
-          ref_id: invId,
-          debit: 0,
-          credit: total,
-          date: new Date().toISOString().split('T')[0]
-        });
-      } else if (invPaymentMethod === 'credit' && arAcc && revenueAcc) {
-        // Debit AR, Credit Revenue
-        const txId1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', txId1, {
-          id: txId1,
-          account_id: arAcc,
-          ref_table: 'sales_invoices',
-          ref_id: invId,
-          debit: total,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const txId2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', txId2, {
-          id: txId2,
-          account_id: revenueAcc,
-          ref_table: 'sales_invoices',
-          ref_id: invId,
-          debit: 0,
-          credit: total,
-          date: new Date().toISOString().split('T')[0]
-        });
-      }
+          date: new Date().toISOString().split('T')[0],
+          payment_method: invPaymentMethod,
+          subtotal: sub,
+          discount: disc,
+          vat_amount: tax,
+          total,
+          status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid'
+        },
+        invLines.map((line: any) => {
+          const lQty = Number(line.qty) || 0;
+          const lPrice = Number(line.unit_price) || 0;
+          const lDisc = Number(line.discount) || 0;
+          return {
+            item_id: line.item_id,
+            // overwritten by SalesService.createInvoice with the real invoice id
+            invoice_id: '',
+            qty: lQty,
+            unit_price: lPrice,
+            discount: lDisc,
+            line_total: (lQty * lPrice) - lDisc
+          };
+        })
+      );
 
       setInvDiscount('0');
       setInvLines([{ item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
-      await loadData();
       success('تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
-    } catch (e: any) {
-      error(e.message || 'فشل حفظ الفاتورة');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل حفظ الفاتورة'));
     }
   };
 
-  // Receipt Vouchers
+  // Receipt Vouchers — invoice status update and journal-entry posting now
+  // happen inside SalesService.createReceiptVoucher instead of here.
   const handleSaveReceiptVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vouchCustomer || !vouchAmount || !vouchAccountId) {
@@ -352,154 +294,39 @@ export const Sales: React.FC = () => {
     }
 
     try {
-      const vId = crypto.randomUUID();
-      const amountNum = Number(vouchAmount);
-      const tempNo = `PENDING-REC-${Date.now()}`;
-
-      const vObj = {
-        id: vId,
-        voucher_no: tempNo,
+      await createReceiptVoucher({
+        voucher_no: `PENDING-REC-${Date.now()}`,
         customer_id: vouchCustomer,
         invoice_id: vouchInvoiceId || null,
-        amount: amountNum,
+        amount: Number(vouchAmount),
         date: new Date().toISOString().split('T')[0],
-        account_id: vouchAccountId,
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('receipt_vouchers', 'insert', vId, vObj);
-
-      // Updates invoice status to partially_paid/paid if applied to invoice
-      if (vouchInvoiceId) {
-        const inv = salesInvoices.find((i: any) => i.id === vouchInvoiceId);
-        if (inv) {
-          // get existing payments
-          const existingVouchAmount = receiptVouchers
-            .filter((rv: any) => rv.invoice_id === vouchInvoiceId)
-            .reduce((sum, rv) => sum + Number(rv.amount), 0);
-
-          const newTotalPaid = existingVouchAmount + amountNum;
-          const status = newTotalPaid >= inv.total ? 'paid' : 'partially_paid';
-
-          await queueOfflineWrite('sales_invoices', 'insert', inv.id, {
-            ...inv,
-            status,
-            updated_at: new Date().toISOString()
-          });
-        }
-      }
-
-      // Accounting Journal Entry: Debit Cash/Bank, Credit AR
-      const arAcc = accounts.find((a: any) => a.category === 'ar')?.id;
-      if (arAcc) {
-        const tx1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx1, {
-          id: tx1,
-          account_id: vouchAccountId, // Cash/Bank
-          ref_table: 'receipt_vouchers',
-          ref_id: vId,
-          debit: amountNum,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const tx2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx2, {
-          id: tx2,
-          account_id: arAcc, // AR
-          ref_table: 'receipt_vouchers',
-          ref_id: vId,
-          debit: 0,
-          credit: amountNum,
-          date: new Date().toISOString().split('T')[0]
-        });
-      }
+        account_id: vouchAccountId
+      });
 
       setVouchAmount('0');
       setVouchInvoiceId('');
-      await loadData();
       success('تم حفظ سند القبض وتحديث حسابات العميل بنجاح!');
-    } catch (err: any) {
-      error(err.message || 'فشل حفظ سند القبض');
+    } catch (err) {
+      error(getErrorMessage(err, 'فشل حفظ سند القبض'));
     }
   };
 
-  // Statement of Account Report
+  // Statement of Account Report — computed server-side by
+  // SalesService.getCustomerStatement now instead of assembled here.
   const runCustomerStatement = async () => {
     if (!statementCustId) return;
-
-    // Statement includes: Opening balance, invoices, receipt vouchers, sales returns
-    const listTransactions: any[] = [];
-
-    const cust = customers.find((c: any) => c.id === statementCustId);
-    if (!cust) return;
-
-    // Opening Balance
-    listTransactions.push({
-      date: cust.created_at?.split('T')[0] || '2026-01-01',
-      desc: 'الرصيد الافتتاحي عند التسجيل',
-      debit: Number(cust.opening_balance) || 0,
-      credit: 0,
-    });
-
-    // Invoices (Debit AR)
-    const invs = salesInvoices.filter((i: any) => i.customer_id === statementCustId);
-    invs.forEach((i: any) => {
-      listTransactions.push({
-        date: i.date,
-        desc: `فاتورة مبيعات رقم ${i.invoice_no}`,
-        debit: Number(i.total),
-        credit: 0,
-      });
-    });
-
-    // Receipt Vouchers (Credit AR)
-    const rvs = receiptVouchers.filter((v: any) => v.customer_id === statementCustId);
-    rvs.forEach((v: any) => {
-      listTransactions.push({
-        date: v.date,
-        desc: `سند قبض رقم ${v.voucher_no} ${v.invoice_id ? '(مسدد جزئي)' : '(على الحساب)'}`,
-        debit: 0,
-        credit: Number(v.amount),
-      });
-    });
-
-    // Standalone Returns (Credit AR)
-    const rets = salesReturns.filter((r: any) => r.customer_id === statementCustId);
-    rets.forEach((r: any) => {
-      listTransactions.push({
-        date: r.date,
-        desc: `مرتجع مبيعات رقم ${r.return_no}`,
-        debit: 0,
-        credit: Number(r.total),
-      });
-    });
-
-    // Apply date filters if any
-    let filtered = [...listTransactions];
-    if (statementStart) {
-      filtered = filtered.filter((t: any) => t.date >= statementStart);
+    try {
+      await loadStatement(statementCustId, statementStart, statementEnd);
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تحميل كشف الحساب'));
     }
-    if (statementEnd) {
-      filtered = filtered.filter((t: any) => t.date <= statementEnd);
-    }
-
-    // Sort ascending
-    const chronological = filtered.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Compute running balance
-    let bal = 0;
-    const finalRecords = chronological.map((t: any) => {
-      bal += t.debit - t.credit;
-      return { ...t, balance: bal };
-    });
-
-    setStatementRecords(finalRecords.reverse());
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-6 max-w-7xl mx-auto" 
+      className="p-6 max-w-7xl mx-auto"
       dir="rtl"
     >
       <div className="mb-6 flex justify-between items-center">
@@ -666,11 +493,11 @@ export const Sales: React.FC = () => {
                       <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
                       <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
                       <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
-                        {(
+                        {formatCurrency(
                           Number(c.opening_balance) +
-                          salesInvoices.filter((i: any) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
-                          receiptVouchers.filter((v: any) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        ).toFixed(2)} ج.م
+                          salesInvoices.filter((i) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
+                          receiptVouchers.filter((v) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
+                        )}
                       </td>
                     </motion.tr>
                   ))}
@@ -820,7 +647,7 @@ export const Sales: React.FC = () => {
                     <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 pr-1">
                       <Boxes className="h-3.5 w-3.5 text-gray-400 shrink-0" />
                       <span className="font-bold">مكونات التعبئة لكل وحدة:</span>
-                      {getPackagingBomFor(line.item_id).map((r: any) => (
+                      {getPackagingBomFor(line.item_id).map((r) => (
                         <span key={r.id} className="bg-gray-100 rounded px-2 py-0.5">
                           {itemNamesById[r.component_item_id] || '—'} × {r.quantity_or_percentage}
                         </span>
@@ -838,7 +665,7 @@ export const Sales: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between text-gray-600">
                 <span>المجموع الفرعي:</span>
-                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ج.م</span>
+                <span className="font-mono font-bold">{formatCurrency(calculateInvoiceSubtotal())}</span>
               </div>
 
               <div>
@@ -856,13 +683,13 @@ export const Sales: React.FC = () => {
               {vatEnabled && (
                 <div className="flex justify-between text-gray-600 border-t pt-2">
                   <span>الضريبة ({vatPct}%):</span>
-                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-yellow-600">{formatCurrency(calculateInvoiceTax(calculateInvoiceSubtotal()))}</span>
                 </div>
               )}
 
               <div className="flex justify-between text-lg font-bold text-gray-900 border-t pt-3">
                 <span>المجموع النهائي:</span>
-                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ج.م</span>
+                <span className="font-mono text-blue-600">{formatCurrency(calculateInvoiceTotal())}</span>
               </div>
             </div>
 
@@ -912,8 +739,8 @@ export const Sales: React.FC = () => {
                 >
                   <option value="">-- دفعة على الحساب العام --</option>
                   {salesInvoices
-                    .filter((i: any) => i.customer_id === vouchCustomer && i.status !== 'paid')
-                    .map((i: any) => (
+                    .filter((i) => i.customer_id === vouchCustomer && i.status !== 'paid')
+                    .map((i) => (
                       <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ج.م)</option>
                     ))}
                 </select>
@@ -927,7 +754,7 @@ export const Sales: React.FC = () => {
                   onChange={(e) => setVouchAccountId(e.target.value)}
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
                 >
-                  {accounts.filter((a: any) => a.category === 'cash' || a.category === 'bank').map((a: any) => (
+                  {accounts.filter((a) => a.category === 'cash' || a.category === 'bank').map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
@@ -989,9 +816,9 @@ export const Sales: React.FC = () => {
                       >
                         <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
                         <td className="py-3 px-4 text-gray-700">{cName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{v.amount} ج.م</td>
+                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{formatCurrency(v.amount)}</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
+                        <td className="py-3 px-4 text-gray-500 text-xs">{v.date ? formatDate(v.date) : '-'}</td>
                       </motion.tr>
                     );
                   })}
@@ -1080,11 +907,11 @@ export const Sales: React.FC = () => {
                       transition={{ duration: 0.3, delay: idx * 0.05, ease: 'easeOut' }}
                       className="hover:bg-blue-50 transition-colors cursor-pointer"
                     >
-                      <td className="py-3 px-4 text-gray-700">{rec.date}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
+                      <td className="py-3 px-4 text-gray-700">{formatDate(rec.date)}</td>
+                      <td className="py-3 px-4 font-semibold text-gray-600">{rec.description}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{formatCurrency(rec.balance)}</td>
                     </motion.tr>
                   ))
                 ) : (
