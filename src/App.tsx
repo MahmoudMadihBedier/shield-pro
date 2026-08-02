@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './application/services/auth-service';
 import { Auth } from './presentation/components/Auth';
+import { PendingApproval } from './presentation/components/PendingApproval';
 import { ToastProvider } from './presentation/components/ui/Toast';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
 import { useLocationTracking } from './application/hooks/use-location-tracking';
@@ -77,6 +78,14 @@ function ERPAppContent() {
       await signOut();
     }
   };
+
+  // Account exists and is authenticated, but the Master Admin hasn't
+  // assigned a role_id yet (new signups get role_id = null until reviewed
+  // in Users & Devices) — every checkPermission() call would deny anyway,
+  // so show a clear pending-review state instead of an empty app shell.
+  if (profile && !profile.role_id && profile.role_name !== 'Master Admin') {
+    return <PendingApproval profile={profile} onSignOut={handleLogout} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row" dir="rtl">
