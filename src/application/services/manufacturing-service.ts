@@ -51,8 +51,8 @@ export class ManufacturingService implements IManufacturingService {
     const productionRecipes = recipes.filter((r) => r.recipe_type === 'production');
 
     for (const recipe of productionRecipes) {
-      const plannedQty = recipe.qty * batch.planned_qty;
-      const consumedQty = recipe.qty * actualQty;
+      const plannedQty = recipe.quantity_or_percentage * batch.planned_qty;
+      const consumedQty = recipe.quantity_or_percentage * actualQty;
 
       const consumption = await this.productionConsumptionRepository.create({
         batch_id: batch.id,
