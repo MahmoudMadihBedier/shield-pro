@@ -15,6 +15,30 @@ import { StockMovementRepository } from './repositories/stock-movement-repositor
 import { AccountRepository } from './repositories/account-repository';
 import { AccountTransactionRepository } from './repositories/account-transaction-repository';
 import { WarehouseRepository } from './repositories/warehouse-repository';
+import { UserRepository } from './repositories/user-repository';
+import { RoleRepository } from './repositories/role-repository';
+import { PermissionRepository } from './repositories/permission-repository';
+import { RolePermissionRepository } from './repositories/role-permission-repository';
+import { UnitConversionRepository } from './repositories/unit-conversion-repository';
+import { CustomerRepository } from './repositories/customer-repository';
+import { SalesInvoiceRepository } from './repositories/sales-invoice-repository';
+import { SalesInvoiceLineRepository } from './repositories/sales-invoice-line-repository';
+import { SalesReturnRepository } from './repositories/sales-return-repository';
+import { SalesReturnLineRepository } from './repositories/sales-return-line-repository';
+import { SupplierRepository } from './repositories/supplier-repository';
+import { PurchaseInvoiceRepository } from './repositories/purchase-invoice-repository';
+import { PurchaseInvoiceLineRepository } from './repositories/purchase-invoice-line-repository';
+import { ReceiptVoucherRepository } from './repositories/receipt-voucher-repository';
+import { PaymentVoucherRepository } from './repositories/payment-voucher-repository';
+import { ItemRecipeRepository } from './repositories/item-recipe-repository';
+import { ProductionBatchRepository } from './repositories/production-batch-repository';
+import { ProductionConsumptionRepository } from './repositories/production-consumption-repository';
+import { EmployeeRepository } from './repositories/employee-repository';
+import { AttendanceRepository } from './repositories/attendance-repository';
+import { PayrollRunRepository } from './repositories/payroll-run-repository';
+import { SettingRepository } from './repositories/setting-repository';
+import { AuditLogRepository } from './repositories/audit-log-repository';
+import { UserLocationRepository } from './repositories/user-location-repository';
 import { IRepository } from '../../core/interfaces/repository';
 import { BaseEntity } from '../../core/domain/entities';
 
@@ -45,28 +69,28 @@ export class RepositoryFactory {
 
   static getUserRepository(): IUserRepository {
     if (!instances.userRepository) {
-      instances.userRepository = new BaseRepositorySimple('users');
+      instances.userRepository = new UserRepository();
     }
     return instances.userRepository;
   }
 
   static getRoleRepository(): IRoleRepository {
     if (!instances.roleRepository) {
-      instances.roleRepository = new BaseRepositorySimple('roles');
+      instances.roleRepository = new RoleRepository();
     }
     return instances.roleRepository;
   }
 
   static getPermissionRepository(): IPermissionRepository {
     if (!instances.permissionRepository) {
-      instances.permissionRepository = new BaseRepositorySimple('permissions');
+      instances.permissionRepository = new PermissionRepository();
     }
     return instances.permissionRepository;
   }
 
   static getRolePermissionRepository(): IRolePermissionRepository {
     if (!instances.rolePermissionRepository) {
-      instances.rolePermissionRepository = new BaseRepositorySimple('role_permissions');
+      instances.rolePermissionRepository = new RolePermissionRepository();
     }
     return instances.rolePermissionRepository;
   }
@@ -80,7 +104,7 @@ export class RepositoryFactory {
 
   static getUnitConversionRepository(): IUnitConversionRepository {
     if (!instances.unitConversionRepository) {
-      instances.unitConversionRepository = new BaseRepositorySimple('unit_conversions');
+      instances.unitConversionRepository = new UnitConversionRepository();
     }
     return instances.unitConversionRepository;
   }
@@ -94,56 +118,56 @@ export class RepositoryFactory {
 
   static getCustomerRepository(): ICustomerRepository {
     if (!instances.customerRepository) {
-      instances.customerRepository = new BaseRepositorySimple('customers');
+      instances.customerRepository = new CustomerRepository();
     }
     return instances.customerRepository;
   }
 
   static getSalesInvoiceRepository(): ISalesInvoiceRepository {
     if (!instances.salesInvoiceRepository) {
-      instances.salesInvoiceRepository = new BaseRepositorySimple('sales_invoices');
+      instances.salesInvoiceRepository = new SalesInvoiceRepository();
     }
     return instances.salesInvoiceRepository;
   }
 
   static getSalesInvoiceLineRepository(): ISalesInvoiceLineRepository {
     if (!instances.salesInvoiceLineRepository) {
-      instances.salesInvoiceLineRepository = new BaseRepositorySimple('sales_invoice_lines');
+      instances.salesInvoiceLineRepository = new SalesInvoiceLineRepository();
     }
     return instances.salesInvoiceLineRepository;
   }
 
   static getSalesReturnRepository(): ISalesReturnRepository {
     if (!instances.salesReturnRepository) {
-      instances.salesReturnRepository = new BaseRepositorySimple('sales_returns');
+      instances.salesReturnRepository = new SalesReturnRepository();
     }
     return instances.salesReturnRepository;
   }
 
   static getSalesReturnLineRepository(): ISalesReturnLineRepository {
     if (!instances.salesReturnLineRepository) {
-      instances.salesReturnLineRepository = new BaseRepositorySimple('sales_return_lines');
+      instances.salesReturnLineRepository = new SalesReturnLineRepository();
     }
     return instances.salesReturnLineRepository;
   }
 
   static getSupplierRepository(): ISupplierRepository {
     if (!instances.supplierRepository) {
-      instances.supplierRepository = new BaseRepositorySimple('suppliers');
+      instances.supplierRepository = new SupplierRepository();
     }
     return instances.supplierRepository;
   }
 
   static getPurchaseInvoiceRepository(): IPurchaseInvoiceRepository {
     if (!instances.purchaseInvoiceRepository) {
-      instances.purchaseInvoiceRepository = new BaseRepositorySimple('purchase_invoices');
+      instances.purchaseInvoiceRepository = new PurchaseInvoiceRepository();
     }
     return instances.purchaseInvoiceRepository;
   }
 
   static getPurchaseInvoiceLineRepository(): IPurchaseInvoiceLineRepository {
     if (!instances.purchaseInvoiceLineRepository) {
-      instances.purchaseInvoiceLineRepository = new BaseRepositorySimple('purchase_invoice_lines');
+      instances.purchaseInvoiceLineRepository = new PurchaseInvoiceLineRepository();
     }
     return instances.purchaseInvoiceLineRepository;
   }
@@ -164,77 +188,77 @@ export class RepositoryFactory {
 
   static getReceiptVoucherRepository(): IReceiptVoucherRepository {
     if (!instances.receiptVoucherRepository) {
-      instances.receiptVoucherRepository = new BaseRepositorySimple('receipt_vouchers');
+      instances.receiptVoucherRepository = new ReceiptVoucherRepository();
     }
     return instances.receiptVoucherRepository;
   }
 
   static getPaymentVoucherRepository(): IPaymentVoucherRepository {
     if (!instances.paymentVoucherRepository) {
-      instances.paymentVoucherRepository = new BaseRepositorySimple('payment_vouchers');
+      instances.paymentVoucherRepository = new PaymentVoucherRepository();
     }
     return instances.paymentVoucherRepository;
   }
 
   static getItemRecipeRepository(): IItemRecipeRepository {
     if (!instances.itemRecipeRepository) {
-      instances.itemRecipeRepository = new BaseRepositorySimple('item_recipes');
+      instances.itemRecipeRepository = new ItemRecipeRepository();
     }
     return instances.itemRecipeRepository;
   }
 
   static getProductionBatchRepository(): IProductionBatchRepository {
     if (!instances.productionBatchRepository) {
-      instances.productionBatchRepository = new BaseRepositorySimple('production_batches');
+      instances.productionBatchRepository = new ProductionBatchRepository();
     }
     return instances.productionBatchRepository;
   }
 
   static getProductionConsumptionRepository(): IProductionConsumptionRepository {
     if (!instances.productionConsumptionRepository) {
-      instances.productionConsumptionRepository = new BaseRepositorySimple('production_consumptions');
+      instances.productionConsumptionRepository = new ProductionConsumptionRepository();
     }
     return instances.productionConsumptionRepository;
   }
 
   static getEmployeeRepository(): IEmployeeRepository {
     if (!instances.employeeRepository) {
-      instances.employeeRepository = new BaseRepositorySimple('employees');
+      instances.employeeRepository = new EmployeeRepository();
     }
     return instances.employeeRepository;
   }
 
   static getAttendanceRepository(): IAttendanceRepository {
     if (!instances.attendanceRepository) {
-      instances.attendanceRepository = new BaseRepositorySimple('attendance');
+      instances.attendanceRepository = new AttendanceRepository();
     }
     return instances.attendanceRepository;
   }
 
   static getPayrollRunRepository(): IPayrollRunRepository {
     if (!instances.payrollRunRepository) {
-      instances.payrollRunRepository = new BaseRepositorySimple('payroll_runs');
+      instances.payrollRunRepository = new PayrollRunRepository();
     }
     return instances.payrollRunRepository;
   }
 
   static getSettingRepository(): ISettingRepository {
     if (!instances.settingRepository) {
-      instances.settingRepository = new BaseRepositorySimple('settings');
+      instances.settingRepository = new SettingRepository();
     }
     return instances.settingRepository;
   }
 
   static getAuditLogRepository(): IAuditLogRepository {
     if (!instances.auditLogRepository) {
-      instances.auditLogRepository = new BaseRepositorySimple('audit_log');
+      instances.auditLogRepository = new AuditLogRepository();
     }
     return instances.auditLogRepository;
   }
 
   static getUserLocationRepository(): IUserLocationRepository {
     if (!instances.userLocationRepository) {
-      instances.userLocationRepository = new BaseRepositorySimple('user_locations');
+      instances.userLocationRepository = new UserLocationRepository();
     }
     return instances.userLocationRepository;
   }
