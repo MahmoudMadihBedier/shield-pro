@@ -5,14 +5,26 @@ import {
   RefreshCw,
   TrendingUp,
   CreditCard,
-  AlertTriangle
+  AlertTriangle,
+  LayoutDashboard
 } from 'lucide-react';
 import { CardAnimation } from '../components/ui/animations/CardAnimation';
 import { useToast } from '../components/ui/Toast';
+import { useAuth } from '../../application/services/auth-service';
 
 export const Dashboard: React.FC = () => {
   const { stats, lowStockItems, loading, error, loadDashboardStats } = useDashboard();
   const { info } = useToast();
+  const { checkPermission } = useAuth();
+
+  // The dashboard is shared by every role, but each card exposes a specific
+  // module's numbers — a role with no visibility into that module shouldn't
+  // see its card at all (e.g. an accountant shouldn't see sales figures they
+  // have no 'sales':view permission for, and vice versa).
+  const canSeeSales = checkPermission('sales', 'view');
+  const canSeeAccounting = checkPermission('accounting', 'view');
+  const canSeeInventory = checkPermission('inventory', 'view');
+  const hasAnyModuleCard = canSeeSales || canSeeAccounting || canSeeInventory;
 
   const handleRefresh = () => {
     loadDashboardStats();
@@ -94,44 +106,59 @@ export const Dashboard: React.FC = () => {
         </motion.button>
       </motion.div>
 
-      {/* Dashboard Grid Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="مبيعات اليوم الفعلية"
-          value={`${stats.todaySales.toFixed(2)} ج.م`}
-          icon={<TrendingUp className="h-6 w-6" />}
-          bgColor="bg-green-50"
-          iconColor="text-green-600"
-          delay={0.1}
-        />
-        <StatCard
-          title="السيولة النقدية المتاحة (كاش وبنك)"
-          value={`${stats.cashBank.toFixed(2)} ج.م`}
-          icon={<CreditCard className="h-6 w-6" />}
-          bgColor="bg-blue-50"
-          iconColor="text-blue-600"
-          delay={0.2}
-        />
-        <StatCard
-          title="تنبيهات نقص المخزون"
-          value={`${stats.lowStockCount} أصناف`}
-          icon={<AlertTriangle className="h-6 w-6" />}
-          bgColor="bg-red-50"
-          iconColor="text-red-600"
-          delay={0.3}
-        />
-        <StatCard
-          title="العمليات بانتظار المزامنة"
-          value={`${stats.pendingSync} عمليات`}
-          icon={<RefreshCw className="h-6 w-6" />}
-          bgColor="bg-yellow-50"
-          iconColor="text-yellow-600"
-          delay={0.4}
-        />
-      </div>
+      {/* Dashboard Grid Stats — each card is gated behind the module permission it exposes */}
+      {hasAnyModuleCard ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {canSeeSales && (
+            <StatCard
+              title="مبيعات اليوم الفعلية"
+              value={`${stats.todaySales.toFixed(2)} ج.م`}
+              icon={<TrendingUp className="h-6 w-6" />}
+              bgColor="bg-green-50"
+              iconColor="text-green-600"
+              delay={0.1}
+            />
+          )}
+          {canSeeAccounting && (
+            <StatCard
+              title="السيولة النقدية المتاحة (كاش وبنك)"
+              value={`${stats.cashBank.toFixed(2)} ج.م`}
+              icon={<CreditCard className="h-6 w-6" />}
+              bgColor="bg-blue-50"
+              iconColor="text-blue-600"
+              delay={0.2}
+            />
+          )}
+          {canSeeInventory && (
+            <StatCard
+              title="تنبيهات نقص المخزون"
+              value={`${stats.lowStockCount} أصناف`}
+              icon={<AlertTriangle className="h-6 w-6" />}
+              bgColor="bg-red-50"
+              iconColor="text-red-600"
+              delay={0.3}
+            />
+          )}
+          <StatCard
+            title="العمليات بانتظار المزامنة"
+            value={`${stats.pendingSync} عمليات`}
+            icon={<RefreshCw className="h-6 w-6" />}
+            bgColor="bg-yellow-50"
+            iconColor="text-yellow-600"
+            delay={0.4}
+          />
+        </div>
+      ) : (
+        <div className="bg-white p-10 rounded-lg border shadow-sm flex flex-col items-center justify-center text-center gap-2">
+          <LayoutDashboard className="h-8 w-8 text-gray-300" />
+          <p className="text-gray-500 text-sm">
+            لا توجد مؤشرات عامة متاحة لدورك الوظيفي حالياً. استخدم القائمة الجانبية للوصول إلى الأقسام المتاحة لك.
+          </p>
+        </div>
+      )}
 
       {/* Low Stock Alerts Table */}
-      {lowStockItems.length > 0 && (
+      {canSeeInventory && lowStockItems.length > 0 && (
         <CardAnimation delay={0.5}>
           <motion.div
             initial={{ opacity: 0, y: 20 }}

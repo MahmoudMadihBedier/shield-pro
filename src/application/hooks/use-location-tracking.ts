@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
+import { useToast } from '../../presentation/components/ui/Toast';
 import type { UserProfile } from '../services/auth-service';
 
 const SAMPLE_INTERVAL_MS = 60 * 1000;
@@ -12,16 +13,23 @@ const SAMPLE_INTERVAL_MS = 60 * 1000;
  */
 export function useLocationTracking(profile: UserProfile | null) {
   const watchActive = useRef(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!profile || typeof navigator === 'undefined' || !navigator.geolocation) return;
     let cancelled = false;
     let intervalId: ReturnType<typeof setInterval> | null = null;
+    let hasConfirmedFirstFix = false;
+    let hasWarnedOnDenial = false;
 
     const recordPosition = () => {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           if (cancelled) return;
+          if (!hasConfirmedFirstFix) {
+            hasConfirmedFirstFix = true;
+            toast.success('تم تفعيل مشاركة الموقع بنجاح.');
+          }
           const id = crypto.randomUUID();
           await queueOfflineWrite('user_locations', 'insert', id, {
             id,
@@ -32,9 +40,17 @@ export function useLocationTracking(profile: UserProfile | null) {
             recorded_at: new Date().toISOString()
           });
         },
-        () => {
-          // Permission denied or position unavailable — stay silent, this
-          // must never interrupt the user's actual work in the app.
+        (err) => {
+          if (cancelled || hasWarnedOnDenial) return;
+          // Only surface a permission denial once per session — must never
+          // repeatedly interrupt the user's actual work in the app.
+          if (err.code === err.PERMISSION_DENIED) {
+            hasWarnedOnDenial = true;
+            toast.warning(
+              'دورك يتطلب مشاركة الموقع الجغرافي. من فضلك اسمح بالوصول للموقع من إعدادات المتصفح لتفعيل تتبع الموقع.',
+              8000
+            );
+          }
         },
         { enableHighAccuracy: false, maximumAge: SAMPLE_INTERVAL_MS, timeout: 20000 }
       );
@@ -52,6 +68,26 @@ export function useLocationTracking(profile: UserProfile | null) {
           : profile.role_name === 'مندوب مبيعات';
 
       if (!shouldTrack || cancelled) return;
+
+      // Ask up front (rather than waiting silently for the interval) so the
+      // browser's native permission prompt appears as soon as the user's
+      // session starts, and so a prior denial surfaces immediately via the
+      // warning toast above instead of only after the first minute passes.
+      if (typeof navigator.permissions?.query === 'function') {
+        try {
+          const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+          if (status.state === 'denied' && !cancelled) {
+            hasWarnedOnDenial = true;
+            toast.warning(
+              'دورك يتطلب مشاركة الموقع الجغرافي، لكن إذن الوصول للموقع مرفوض في هذا المتصفح. من فضلك فعّله من إعدادات الموقع في المتصفح.',
+              8000
+            );
+          }
+        } catch {
+          // Permissions API not supported for 'geolocation' on this browser
+          // — fall through to the direct getCurrentPosition prompt below.
+        }
+      }
 
       watchActive.current = true;
       recordPosition();
