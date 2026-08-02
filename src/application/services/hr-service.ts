@@ -3,11 +3,17 @@ import { Employee, Attendance, PayrollRun } from '../../core/domain/entities';
 import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/types';
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { postDoubleEntry } from './accounting-helpers';
+
+// Salaries Expense account code, matching the lookup HR.tsx handleRunPayroll
+// already does: accounts.find(a => a.code === '60101').
+const SALARIES_EXPENSE_ACCOUNT_CODE = '60101';
 
 export class HRService implements IHRService {
   private employeeRepository = RepositoryFactory.getEmployeeRepository();
   private attendanceRepository = RepositoryFactory.getAttendanceRepository();
   private payrollRunRepository = RepositoryFactory.getPayrollRunRepository();
+  private accountRepository = RepositoryFactory.getAccountRepository();
 
   async getEmployees(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Employee>> {
     return await this.employeeRepository.findAll(filter, params);
@@ -40,12 +46,26 @@ export class HRService implements IHRService {
   }
 
   async createPayrollRun(payroll: Omit<PayrollRun, 'id' | 'created_at' | 'updated_at'>): Promise<PayrollRun> {
-    // NOTE: The current UI handler (HR.tsx) also posts accounting journal
-    // entries (salary expense) via postDoubleEntry when a payroll run is
-    // created. That side effect stays in the component for this pass and
-    // will move into this service in the next phase.
-    const newPayrollRun = await this.payrollRunRepository.create(payroll);
+    // Mirrors HR.tsx handleRunPayroll's formula: net = basic + bonuses - deductions,
+    // computed fresh here rather than trusting the caller-supplied net_salary.
+    const netSalary = Number(payroll.basic_salary) + Number(payroll.bonuses) - Number(payroll.deductions);
+    const newPayrollRun = await this.payrollRunRepository.create({ ...payroll, net_salary: netSalary });
     await queueOfflineWrite('payroll_runs', 'insert', newPayrollRun.id, newPayrollRun);
+
+    // Journal entry, mirroring HR.tsx handleRunPayroll: debit the Salaries
+    // Expense account (code '60101'), credit the 'cash' category account.
+    const salariesExpAcc = await this.accountRepository.findByCode(SALARIES_EXPENSE_ACCOUNT_CODE);
+    const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
+    if (salariesExpAcc && cashAcc) {
+      await postDoubleEntry({
+        refTable: 'payroll_runs',
+        refId: newPayrollRun.id,
+        debitAccountId: salariesExpAcc.id,
+        creditAccountId: cashAcc,
+        amount: netSalary
+      });
+    }
+
     return newPayrollRun;
   }
 }
