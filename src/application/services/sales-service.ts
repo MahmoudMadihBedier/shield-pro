@@ -3,6 +3,7 @@ import { Customer, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine,
 import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/types';
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { postDoubleEntry } from './accounting-helpers';
 
 interface StatementEntry {
   date: string;
@@ -20,6 +21,8 @@ export class SalesService implements ISalesService {
   private salesReturnRepository = RepositoryFactory.getSalesReturnRepository();
   private salesReturnLineRepository = RepositoryFactory.getSalesReturnLineRepository();
   private receiptVoucherRepository = RepositoryFactory.getReceiptVoucherRepository();
+  private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
+  private accountRepository = RepositoryFactory.getAccountRepository();
 
   async getCustomers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Customer>> {
     return await this.customerRepository.findAll(filter, params);
@@ -48,13 +51,60 @@ export class SalesService implements ISalesService {
         invoice_id: newInvoice.id
       });
       await queueOfflineWrite('sales_invoice_lines', 'insert', newLine.id, newLine);
+
+      // Deduct finished-goods stock, mirroring Sales.tsx handleSaveInvoice:
+      // movement_type 'sale_out', negative qty, linked back to the invoice.
+      const movement = await this.stockMovementRepository.create({
+        item_id: newLine.item_id,
+        warehouse_id: newInvoice.warehouse_id,
+        qty: -Math.abs(newLine.qty),
+        movement_type: 'sale_out',
+        batch_no: newInvoice.invoice_no,
+        reference_type: 'sales_invoices',
+        reference_id: newInvoice.id
+      });
+      // The stock_movements rows written by hand in Sales.tsx/Purchases.tsx/
+      // Manufacturing.tsx carry ref_table/ref_id/moved_at, not the entity
+      // type's reference_type/reference_id/created_at — mirror that shape on
+      // the synced payload (same bridging AccountingService.createTransaction
+      // does for account_transactions) so nothing reading the real schema breaks.
+      await queueOfflineWrite('stock_movements', 'insert', movement.id, {
+        ...movement,
+        ref_table: 'sales_invoices',
+        ref_id: newInvoice.id,
+        moved_at: movement.created_at
+      });
     }
 
-    // NOTE: stock-movement (deducting sold qty from stock) and journal-entry
-    // (Cash/AR debit vs Revenue credit) side effects are intentionally left in
-    // the Sales component for this pass — see Sales.tsx handleSaveInvoice.
-    // Wiring them into this service (via accounting-helpers postDoubleEntry)
-    // is a follow-up.
+    // Journal entry, mirroring Sales.tsx handleSaveInvoice: cash sales debit
+    // the 'cash' category account, credit sales debit 'ar' (accounts
+    // receivable); both credit the 'revenue' account for the invoice total.
+    const revenueAcc = (await this.accountRepository.findByCategory('revenue'))[0]?.id;
+    if (newInvoice.payment_method === 'cash') {
+      const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
+      if (cashAcc && revenueAcc) {
+        await postDoubleEntry({
+          refTable: 'sales_invoices',
+          refId: newInvoice.id,
+          debitAccountId: cashAcc,
+          creditAccountId: revenueAcc,
+          amount: newInvoice.total,
+          date: newInvoice.date
+        });
+      }
+    } else if (newInvoice.payment_method === 'credit') {
+      const arAcc = (await this.accountRepository.findByCategory('ar'))[0]?.id;
+      if (arAcc && revenueAcc) {
+        await postDoubleEntry({
+          refTable: 'sales_invoices',
+          refId: newInvoice.id,
+          debitAccountId: arAcc,
+          creditAccountId: revenueAcc,
+          amount: newInvoice.total,
+          date: newInvoice.date
+        });
+      }
+    }
 
     return newInvoice;
   }
@@ -103,6 +153,37 @@ export class SalesService implements ISalesService {
   async createReceiptVoucher(voucher: Omit<ReceiptVoucher, 'id' | 'created_at' | 'updated_at'>): Promise<ReceiptVoucher> {
     const newVoucher = await this.receiptVoucherRepository.create(voucher);
     await queueOfflineWrite('receipt_vouchers', 'insert', newVoucher.id, newVoucher);
+
+    // Mirrors Sales.tsx handleSaveReceiptVoucher: mark the linked invoice
+    // paid/partially_paid based on the sum of receipt vouchers applied to it.
+    if (newVoucher.invoice_id) {
+      const invoice = await this.salesInvoiceRepository.findById(newVoucher.invoice_id);
+      if (invoice) {
+        const customerVouchers = await this.receiptVoucherRepository.findByCustomerId(invoice.customer_id);
+        const totalPaid = customerVouchers
+          .filter((v) => v.invoice_id === invoice.id)
+          .reduce((sum, v) => sum + Number(v.amount), 0);
+        const status = totalPaid >= invoice.total ? 'paid' : 'partially_paid';
+
+        const updatedInvoice = await this.salesInvoiceRepository.update(invoice.id, { status });
+        await queueOfflineWrite('sales_invoices', 'update', invoice.id, updatedInvoice);
+      }
+    }
+
+    // Journal entry, mirroring Sales.tsx: debit Cash/Bank (the voucher's
+    // account), credit AR.
+    const arAcc = (await this.accountRepository.findByCategory('ar'))[0]?.id;
+    if (arAcc) {
+      await postDoubleEntry({
+        refTable: 'receipt_vouchers',
+        refId: newVoucher.id,
+        debitAccountId: newVoucher.account_id,
+        creditAccountId: arAcc,
+        amount: newVoucher.amount,
+        date: newVoucher.date
+      });
+    }
+
     return newVoucher;
   }
 
