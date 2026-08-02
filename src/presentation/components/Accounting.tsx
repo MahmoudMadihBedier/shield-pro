@@ -1,6 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../infrastructure/database/dexie';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { postDoubleEntry } from '../../application/services/accounting-helpers';
+import { useAccounts, useAccountTransactions } from '../../application/hooks/use-accounting';
+import { useInventory, useStockMovements } from '../../application/hooks/use-inventory';
+import { PaginationParams } from '../../core/types';
+import { formatCurrency, formatDate } from '../../shared/utils/format';
+import { getErrorMessage } from '../../shared/utils/errors';
 import {
   DollarSign,
   TrendingUp,
@@ -9,17 +15,62 @@ import {
   Building
 } from 'lucide-react';
 
+// Stable reference (not recreated per render) so the data hooks below don't
+// re-fetch in a loop — their internal useCallback/useEffect deps include
+// this params object by identity.
+const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
+
 export const Accounting: React.FC = () => {
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity'>('liquidity');
 
-  // Master lists
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  // Data, sourced from the service/hook layer instead of Dexie directly.
+  const { accounts: accountsResult, getCashBankBalance } = useAccounts();
+  // Free-text categories used below ('ar', 'ap', 'fixed_assets', 'capital')
+  // don't overlap with the Account.category union type, so this is kept as
+  // `any[]` the same way the original component's local state was untyped.
+  const accounts = accountsResult.data as any[];
+
+  const { transactions: transactionsResult, loadTransactions } = useAccountTransactions(undefined, UNPAGINATED);
+  const transactions = [...transactionsResult.data].sort(
+    (a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+  );
+
+  const { items: allItemsResult } = useInventory(undefined, UNPAGINATED);
+  const items = allItemsResult.data;
+
+  const { movements: movementsResult } = useStockMovements(undefined, UNPAGINATED);
+  const stockMovements = movementsResult.data;
+
+  // No dedicated service/repository exists for fixed_assets/expenses yet
+  // (unlike warehouses, items, accounts, etc.) — RepositoryFactory has no
+  // getter for either table, so these two stay on direct Dexie access +
+  // queueOfflineWrite, matching how they already worked.
   const [fixedAssets, setFixedAssets] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [stockMovements, setStockMovements] = useState<any[]>([]);
+
+  const loadFixedAssets = () => {
+    db.fixed_assets.toArray().then(setFixedAssets);
+  };
+
+  const loadExpenses = () => {
+    db.expenses.toArray().then((list: any[]) => {
+      setExpenses(list.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+    });
+  };
+
+  useEffect(() => {
+    loadFixedAssets();
+    loadExpenses();
+  }, []);
+
+  // Combined cash+bank balance, computed by AccountingService.getCashBankBalance
+  // instead of duplicating that debit/credit-sum logic here.
+  const [cashBankBalance, setCashBankBalance] = useState(0);
+  useEffect(() => {
+    getCashBankBalance().then(setCashBankBalance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactionsResult.data, getCashBankBalance]);
 
   // 1. Asset state
   const [assetName, setAssetName] = useState('');
@@ -32,31 +83,23 @@ export const Accounting: React.FC = () => {
   const [expAccount, setExpAccountId] = useState(''); // Cash or Bank Account
   const [expNotes, setExpNotes] = useState('');
 
+  // Default selections, once accounts have loaded (mirrors the old loadData()
+  // one-time defaulting, but reactive to the accounts hook's own load).
   useEffect(() => {
-    loadData();
-  }, []);
+    const expenseCategories = accounts.filter((a: any) => a.category === 'expense');
+    if (expenseCategories.length > 0 && !expCategory) {
+      setExpCategory(expenseCategories[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
 
-  const loadData = async () => {
-    const listAccs = await db.accounts.toArray();
-    const listTxs = await db.account_transactions.toArray();
-    const listAssets = await db.fixed_assets.toArray();
-    const listExps = await db.expenses.toArray();
-    const listItems = await db.items.toArray();
-    const listMovs = await db.stock_movements.toArray();
-
-    setAccounts(listAccs);
-    setTransactions(listTxs.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    setFixedAssets(listAssets);
-    setExpenses(listExps.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    setItems(listItems);
-    setStockMovements(listMovs);
-
-    const expenseCategories = listAccs.filter((a: any) => a.category === 'expense');
-    if (expenseCategories.length > 0) setExpCategory(expenseCategories[0].id);
-
-    const cashBankAccs = listAccs.filter((a: any) => a.category === 'cash' || a.category === 'bank');
-    if (cashBankAccs.length > 0) setExpAccountId(cashBankAccs[0].id);
-  };
+  useEffect(() => {
+    const cashBankAccs = accounts.filter((a: any) => a.category === 'cash' || a.category === 'bank');
+    if (cashBankAccs.length > 0 && !expAccount) {
+      setExpAccountId(cashBankAccs[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
 
   // Add Fixed Asset
   const handleAddAsset = async (e: React.FormEvent) => {
@@ -82,35 +125,23 @@ export const Accounting: React.FC = () => {
       const assetAcc = accounts.find((a: any) => a.category === 'fixed_assets')?.id;
       const capitalAcc = accounts.find((a: any) => a.category === 'capital')?.id;
       if (assetAcc && capitalAcc) {
-        const tx1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx1, {
-          id: tx1,
-          account_id: assetAcc,
-          ref_table: 'fixed_assets',
-          ref_id: id,
-          debit: val,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const tx2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx2, {
-          id: tx2,
-          account_id: capitalAcc,
-          ref_table: 'fixed_assets',
-          ref_id: id,
-          debit: 0,
-          credit: val,
-          date: new Date().toISOString().split('T')[0]
+        await postDoubleEntry({
+          refTable: 'fixed_assets',
+          refId: id,
+          debitAccountId: assetAcc,
+          creditAccountId: capitalAcc,
+          amount: val
         });
       }
 
       setAssetName('');
       setAssetValue('0');
       setAssetDepr('0');
-      await loadData();
+      loadFixedAssets();
+      await loadTransactions();
       alert('تم تسجيل الأصل الثابت بنجاح وتوليد القيود المحاسبية له!');
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(getErrorMessage(err, 'فشل تسجيل الأصل الثابت'));
     }
   };
 
@@ -135,33 +166,21 @@ export const Accounting: React.FC = () => {
       await queueOfflineWrite('expenses', 'insert', id, expObj);
 
       // Debit Expense account, Credit Cash/Bank account
-      const tx1 = crypto.randomUUID();
-      await queueOfflineWrite('account_transactions', 'insert', tx1, {
-        id: tx1,
-        account_id: expCategory,
-        ref_table: 'expenses',
-        ref_id: id,
-        debit: amountNum,
-        credit: 0,
-        date: new Date().toISOString().split('T')[0]
-      });
-      const tx2 = crypto.randomUUID();
-      await queueOfflineWrite('account_transactions', 'insert', tx2, {
-        id: tx2,
-        account_id: expAccount,
-        ref_table: 'expenses',
-        ref_id: id,
-        debit: 0,
-        credit: amountNum,
-        date: new Date().toISOString().split('T')[0]
+      await postDoubleEntry({
+        refTable: 'expenses',
+        refId: id,
+        debitAccountId: expCategory,
+        creditAccountId: expAccount,
+        amount: amountNum
       });
 
       setExpAmount('0');
       setExpNotes('');
-      await loadData();
+      loadExpenses();
+      await loadTransactions();
       alert('تم تسجيل مصروف التشغيل وصرف القيد المالي المحاسبي له بنجاح!');
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(getErrorMessage(err, 'فشل تسجيل المصروف'));
     }
   };
 
@@ -216,7 +235,7 @@ export const Accounting: React.FC = () => {
   const invVal = calculateInventoryValuation();
   const fixed = fixedAssets.reduce((sum, a) => sum + Number(a.value), 0);
 
-  const totalCapital = cash + bank + ar + invVal + fixed - ap;
+  const totalCapital = cashBankBalance + ar + invVal + fixed - ap;
 
   return (
     <div className="p-6 max-w-7xl mx-auto" dir="rtl">
@@ -271,7 +290,7 @@ export const Accounting: React.FC = () => {
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-green-600">رأس المال الفعلي الجاري (Liquidity)</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{totalCapital.toFixed(2)} ج.م</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{formatCurrency(totalCapital)}</div>
               </div>
               <div className="text-[10px] text-gray-400 mt-4">
                 الحسبة: صندوق الكاش + البنوك + مستحقات العملاء + قيمة البضاعة التامة والخامات - مستحقات الموردين + الاصول الثابتة
@@ -281,22 +300,22 @@ export const Accounting: React.FC = () => {
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-blue-600">السيولة النقدية المتاحة (Cash & Bank)</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{(cash + bank).toFixed(2)} ج.م</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{formatCurrency(cashBankBalance)}</div>
               </div>
               <div className="flex gap-4 mt-4 text-[10px] text-gray-500">
-                <span>الكاش: {cash.toFixed(2)} ج.م</span>
-                <span>البنك: {bank.toFixed(2)} ج.م</span>
+                <span>الكاش: {formatCurrency(cash)}</span>
+                <span>البنك: {formatCurrency(bank)}</span>
               </div>
             </div>
 
             <div className="bg-white p-6 rounded-lg border shadow-sm flex flex-col justify-between">
               <div>
                 <span className="text-xs font-bold text-yellow-600">الذمم المالية والمديونيات الخارجية</span>
-                <div className="text-3xl font-black mt-2 text-gray-900">{(ar - ap).toFixed(2)} ج.م</div>
+                <div className="text-3xl font-black mt-2 text-gray-900">{formatCurrency(ar - ap)}</div>
               </div>
               <div className="flex gap-4 mt-4 text-[10px] text-gray-500">
-                <span className="text-green-600">مستحقات لنا: {ar.toFixed(2)} ج.م</span>
-                <span className="text-red-600">مستحقات للموردين: {ap.toFixed(2)} ر.s</span>
+                <span className="text-green-600">مستحقات لنا: {formatCurrency(ar)}</span>
+                <span className="text-red-600">مستحقات للموردين: {formatCurrency(ap)}</span>
               </div>
             </div>
           </div>
@@ -308,25 +327,25 @@ export const Accounting: React.FC = () => {
               <div className="space-y-3">
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">قيمة مخزون المستودعات (تقديرية):</span>
-                  <span className="font-mono font-bold text-gray-900">{invVal.toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-gray-900">{formatCurrency(invVal)}</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">قيمة الأصول الثابتة والأجهزة:</span>
-                  <span className="font-mono font-bold text-gray-900">{fixed.toFixed(2)} ر.s</span>
+                  <span className="font-mono font-bold text-gray-900">{formatCurrency(fixed)}</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">إجمالي الموجودات (الأصول والسيولة):</span>
-                  <span className="font-mono font-bold text-green-600">{(cash + bank + ar + invVal + fixed).toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-green-600">{formatCurrency(cashBankBalance + ar + invVal + fixed)}</span>
                 </div>
               </div>
               <div className="space-y-3">
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">إجمالي الالتزامات والخصوم (الموردون):</span>
-                  <span className="font-mono font-bold text-red-600">{ap.toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-red-600">{formatCurrency(ap)}</span>
                 </div>
                 <div className="flex justify-between border-b pb-1">
                   <span className="text-gray-600">رأس المال الفعلي (Net Assets):</span>
-                  <span className="font-mono font-bold text-blue-600">{totalCapital.toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-blue-600">{formatCurrency(totalCapital)}</span>
                 </div>
               </div>
             </div>
@@ -421,10 +440,10 @@ export const Accounting: React.FC = () => {
                     return (
                       <tr key={e.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-semibold text-gray-800">{catName}</td>
-                        <td className="py-3 px-4 font-mono font-bold text-red-600">{e.amount} ج.م</td>
+                        <td className="py-3 px-4 font-mono font-bold text-red-600">{formatCurrency(e.amount)}</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
                         <td className="py-3 px-4 text-gray-600 text-xs">{e.notes || '-'}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{new Date(e.date).toLocaleDateString('ar-EG')}</td>
+                        <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(e.date)}</td>
                       </tr>
                     );
                   })}
@@ -508,9 +527,9 @@ export const Accounting: React.FC = () => {
                   {fixedAssets.map(a => (
                     <tr key={a.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 font-bold text-gray-800">{a.name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-gray-900">{a.value} ج.م</td>
+                      <td className="py-3 px-4 font-mono font-bold text-gray-900">{formatCurrency(a.value)}</td>
                       <td className="py-3 px-4 text-gray-600">{a.depreciation_rate}% سنوياً</td>
-                      <td className="py-3 px-4 text-gray-500 text-xs">{new Date(a.purchase_date).toLocaleDateString('ar-EG')}</td>
+                      <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(a.purchase_date)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -535,11 +554,11 @@ export const Accounting: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {transactions.map((tx, idx) => {
+                {transactions.map((tx: any, idx) => {
                   const accName = accounts.find(a => a.id === tx.account_id)?.name || '';
                   return (
                     <tr key={idx} className="hover:bg-gray-50">
-                      <td className="py-3 px-4 text-gray-500 text-xs">{new Date(tx.date).toLocaleDateString('ar-EG')}</td>
+                      <td className="py-3 px-4 text-gray-500 text-xs">{formatDate(tx.date)}</td>
                       <td className="py-3 px-4 font-semibold text-gray-800">{accName}</td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-green-600">{Number(tx.debit) > 0 ? `+${tx.debit}` : '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-red-600">{Number(tx.credit) > 0 ? `-${tx.credit}` : '-'}</td>

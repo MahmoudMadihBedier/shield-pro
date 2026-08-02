@@ -39,7 +39,7 @@ export interface ISalesService {
   getCustomers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Customer>>;
   createCustomer(customer: Omit<Customer, 'id' | 'created_at' | 'updated_at'>): Promise<Customer>;
   getInvoices(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<SalesInvoice>>;
-  createInvoice(invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>, lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[]): Promise<SalesInvoice>;
+  createInvoice(invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>, lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[], warehouseId: string): Promise<SalesInvoice>;
   updateInvoice(id: string, invoice: Partial<SalesInvoice>): Promise<SalesInvoice>;
   deleteInvoice(id: string): Promise<void>;
   getInvoiceLines(invoiceId: string): Promise<SalesInvoiceLine[]>;
@@ -54,7 +54,7 @@ export interface IPurchaseService {
   getSuppliers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Supplier>>;
   createSupplier(supplier: Omit<Supplier, 'id' | 'created_at' | 'updated_at'>): Promise<Supplier>;
   getInvoices(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<PurchaseInvoice>>;
-  createInvoice(invoice: Omit<PurchaseInvoice, 'id' | 'created_at' | 'updated_at'>, lines: Omit<PurchaseInvoiceLine, 'id' | 'created_at' | 'updated_at'>[]): Promise<PurchaseInvoice>;
+  createInvoice(invoice: Omit<PurchaseInvoice, 'id' | 'created_at' | 'updated_at'>, lines: Omit<PurchaseInvoiceLine, 'id' | 'created_at' | 'updated_at'>[], warehouseId: string): Promise<PurchaseInvoice>;
   updateInvoice(id: string, invoice: Partial<PurchaseInvoice>): Promise<PurchaseInvoice>;
   deleteInvoice(id: string): Promise<void>;
   getInvoiceLines(invoiceId: string): Promise<PurchaseInvoiceLine[]>;
@@ -80,7 +80,7 @@ export interface IManufacturingService {
   getBatches(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionBatch>>;
   createBatch(batch: Omit<ProductionBatch, 'id' | 'created_at' | 'updated_at'>): Promise<ProductionBatch>;
   updateBatch(id: string, batch: Partial<ProductionBatch>): Promise<ProductionBatch>;
-  completeBatch(id: string, actualQty: number): Promise<ProductionBatch>;
+  completeBatch(id: string, actualQty: number, actualWastePct: number, warehouseId: string): Promise<ProductionBatch>;
   getBatchConsumptions(batchId: string): Promise<ProductionConsumption[]>;
 }
 

@@ -46,10 +46,10 @@ export class HRService implements IHRService {
   }
 
   async createPayrollRun(payroll: Omit<PayrollRun, 'id' | 'created_at' | 'updated_at'>): Promise<PayrollRun> {
-    // Mirrors HR.tsx handleRunPayroll's formula: net = basic + bonuses - deductions,
-    // computed fresh here rather than trusting the caller-supplied net_salary.
-    const netSalary = Number(payroll.basic_salary) + Number(payroll.bonuses) - Number(payroll.deductions);
-    const newPayrollRun = await this.payrollRunRepository.create({ ...payroll, net_salary: netSalary });
+    // Mirrors HR.tsx handleRunPayroll's formula: net = base + allowances - deductions,
+    // computed fresh here rather than trusting the caller-supplied net_pay.
+    const netPay = Number(payroll.base) + Number(payroll.allowances) - Number(payroll.deductions);
+    const newPayrollRun = await this.payrollRunRepository.create({ ...payroll, net_pay: netPay });
     await queueOfflineWrite('payroll_runs', 'insert', newPayrollRun.id, newPayrollRun);
 
     // Journal entry, mirroring HR.tsx handleRunPayroll: debit the Salaries
@@ -62,7 +62,7 @@ export class HRService implements IHRService {
         refId: newPayrollRun.id,
         debitAccountId: salariesExpAcc.id,
         creditAccountId: cashAcc,
-        amount: netSalary
+        amount: netPay
       });
     }
 

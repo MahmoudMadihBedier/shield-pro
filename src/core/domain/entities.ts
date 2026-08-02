@@ -3,11 +3,19 @@ import { BaseEntity } from '../types/index';
 // Re-export BaseEntity for convenience
 export type { BaseEntity } from '../types/index';
 
+// These entity shapes are checked against the live Supabase schema (via
+// mcp__supabase__list_tables), not just against what any one component
+// happens to write — Dexie tables are untyped (Table<any>), so a field-name
+// or enum-value mismatch here doesn't fail at compile time, it fails at
+// sync time (PostgREST rejects unknown columns / check-constraint violations).
+
 // User and Authentication
 export interface User extends BaseEntity {
   email: string;
   name: string;
   role_id: string | null;
+  // Derived client-side (joined from roles/role_permissions), not real
+  // columns on public.users — never send these on a write.
   role_name?: string;
   permissions?: { [key: string]: { view: boolean; add: boolean; edit: boolean; delete: boolean } };
   app_version?: string;
@@ -17,13 +25,11 @@ export interface User extends BaseEntity {
 
 export interface Role extends BaseEntity {
   name: string;
-  description?: string;
 }
 
 export interface Permission extends BaseEntity {
   module: string;
   action: 'view' | 'add' | 'edit' | 'delete';
-  description?: string;
 }
 
 export interface RolePermission extends BaseEntity {
@@ -34,11 +40,13 @@ export interface RolePermission extends BaseEntity {
 // Inventory Entities
 export interface Item extends BaseEntity {
   name: string;
-  type: 'raw_material' | 'finished_good' | 'packaging' | 'consumable';
+  type: 'raw_material' | 'packaging' | 'intermediate' | 'finished_good';
   reorder_level: number;
   uom_id: string;
   expiry_tracking_enabled: boolean;
   default_price: number;
+  // Not yet live columns on public.items (BarcodeScanInput/Sales.tsx already
+  // read/write these locally; syncing them needs a follow-up migration).
   barcode?: string;
   carton_barcode?: string;
   carton_pack_size?: number;
@@ -46,13 +54,12 @@ export interface Item extends BaseEntity {
 
 export interface Unit extends BaseEntity {
   name: string;
-  symbol: string;
 }
 
 export interface UnitConversion extends BaseEntity {
   from_unit_id: string;
   to_unit_id: string;
-  conversion_factor: number;
+  factor: number;
 }
 
 export interface Warehouse extends BaseEntity {
@@ -65,13 +72,21 @@ export interface StockMovement extends BaseEntity {
   item_id: string;
   warehouse_id: string;
   qty: number;
-  // 'sale_out' / 'purchase_in' are the literal strings the real Sales.tsx /
-  // Purchases.tsx invoice-save flows already write to stock_movements.
-  movement_type: 'receipt' | 'issue' | 'transfer' | 'adjustment' | 'consumption' | 'production' | 'sale_out' | 'purchase_in';
-  reference_id?: string;
-  reference_type?: string;
+  // Matches the live public.stock_movements check constraint exactly.
+  movement_type:
+    | 'purchase_in'
+    | 'sale_out'
+    | 'production_consumption'
+    | 'production_output'
+    | 'sales_return_in'
+    | 'purchase_return_out'
+    | 'manual_adjustment'
+    | 'transfer_out'
+    | 'transfer_in';
+  ref_table?: string;
+  ref_id?: string;
+  moved_at?: string;
   batch_no?: string;
-  notes?: string;
 }
 
 // Sales Entities
@@ -80,21 +95,22 @@ export interface Customer extends BaseEntity {
   phone?: string;
   address?: string;
   opening_balance: number;
+  credit_limit?: number;
 }
 
 export interface SalesInvoice extends BaseEntity {
   invoice_no: string;
   customer_id: string;
-  warehouse_id: string;
+  // Not a column on public.sales_invoices — the warehouse only matters for
+  // the stock_movement rows created alongside the invoice, never stored on
+  // the invoice itself.
+  date: string;
   payment_method: 'cash' | 'credit' | 'bank';
-  // 'paid' / 'unpaid' / 'partially_paid' are the literal statuses the real
-  // Sales.tsx invoice-save / receipt-voucher flows actually write.
-  status: 'draft' | 'posted' | 'cancelled' | 'paid' | 'unpaid' | 'partially_paid';
+  status: 'unpaid' | 'partially_paid' | 'paid' | 'cancelled';
   subtotal: number;
   discount: number;
-  vat_amount: number;
+  tax: number;
   total: number;
-  date?: string;
   notes?: string;
 }
 
@@ -109,11 +125,10 @@ export interface SalesInvoiceLine extends BaseEntity {
 
 export interface SalesReturn extends BaseEntity {
   return_no: string;
-  invoice_id: string;
+  invoice_id?: string;
   customer_id: string;
-  status: 'draft' | 'posted' | 'cancelled';
+  date: string;
   total: number;
-  notes?: string;
 }
 
 export interface SalesReturnLine extends BaseEntity {
@@ -135,17 +150,13 @@ export interface Supplier extends BaseEntity {
 export interface PurchaseInvoice extends BaseEntity {
   invoice_no: string;
   supplier_id: string;
-  warehouse_id: string;
-  payment_method?: 'cash' | 'credit' | 'bank';
-  // 'paid' / 'unpaid' / 'partially_paid' are the literal statuses the real
-  // Purchases.tsx invoice-save / payment-voucher flows actually write.
-  status: 'draft' | 'posted' | 'cancelled' | 'paid' | 'unpaid' | 'partially_paid';
+  date: string;
+  payment_method: 'cash' | 'credit' | 'bank';
+  status: 'unpaid' | 'partially_paid' | 'paid' | 'cancelled';
   subtotal: number;
   discount: number;
-  vat_amount: number;
+  tax: number;
   total: number;
-  date?: string;
-  notes?: string;
 }
 
 export interface PurchaseInvoiceLine extends BaseEntity {
@@ -161,21 +172,18 @@ export interface PurchaseInvoiceLine extends BaseEntity {
 export interface Account extends BaseEntity {
   code: string;
   name: string;
-  category: 'cash' | 'bank' | 'receivable' | 'payable' | 'expense' | 'revenue' | 'equity';
-  parent_id?: string;
-  opening_balance: number;
+  // Matches the live public.accounts check constraint exactly.
+  category: 'cash' | 'bank' | 'capital' | 'fixed_assets' | 'ar' | 'ap' | 'revenue' | 'cogs' | 'expense';
+  is_active?: boolean;
 }
 
 export interface AccountTransaction extends BaseEntity {
   account_id: string;
   debit: number;
   credit: number;
-  reference_id?: string;
-  reference_type?: string;
-  // The real journal-entry code (postDoubleEntry, and every module's inline
-  // debit/credit pair before it) always stamps a business date on the row.
-  date?: string;
-  notes?: string;
+  ref_table?: string;
+  ref_id?: string;
+  date: string;
 }
 
 export interface ReceiptVoucher extends BaseEntity {
@@ -183,9 +191,8 @@ export interface ReceiptVoucher extends BaseEntity {
   customer_id: string;
   account_id: string;
   amount: number;
-  date?: string;
+  date: string;
   invoice_id?: string | null;
-  notes?: string;
 }
 
 export interface PaymentVoucher extends BaseEntity {
@@ -193,47 +200,48 @@ export interface PaymentVoucher extends BaseEntity {
   supplier_id: string;
   account_id: string;
   amount: number;
-  date?: string;
+  date: string;
   invoice_id?: string | null;
-  notes?: string;
 }
 
 // Manufacturing Entities
 export interface ItemRecipe extends BaseEntity {
   parent_item_id: string;
   component_item_id: string;
-  // The real field every write path (Manufacturing.tsx) uses is
-  // `quantity_or_percentage`, not `qty` — this previously declared `qty`,
-  // which meant reads always saw `undefined` at runtime (Dexie tables are
-  // untyped, so nothing caught the mismatch at the type level).
   quantity_or_percentage: number;
-  recipe_type: 'packaging' | 'production';
+  // Matches the live public.item_recipes check constraint exactly — 'batch'
+  // is the bulk/intermediate-production BOM stage, 'packaging' is the
+  // fill/pack stage. There is no 'production' value.
+  recipe_type: 'batch' | 'packaging';
+  mode: 'percentage' | 'fixed_qty';
 }
 
 export interface ProductionBatch extends BaseEntity {
   batch_no: string;
   item_id: string;
-  warehouse_id: string;
-  status: 'planned' | 'in_progress' | 'completed' | 'cancelled';
   planned_qty: number;
-  actual_qty?: number;
-  notes?: string;
+  actual_qty?: number | null;
+  expected_waste_pct?: number;
+  actual_waste_pct?: number | null;
+  expiry_date?: string | null;
+  status: 'draft' | 'confirmed' | 'completed';
+  produced_at?: string;
 }
 
 export interface ProductionConsumption extends BaseEntity {
   batch_id: string;
   raw_item_id: string;
-  planned_qty: number;
-  actual_qty: number;
+  qty_consumed: number;
 }
 
 // HR Entities
 export interface Employee extends BaseEntity {
   name: string;
-  position?: string;
-  department?: string;
-  hire_date?: string;
-  salary?: number;
+  role?: string;
+  base_salary: number;
+  allowances: number;
+  deductions: number;
+  join_date?: string;
 }
 
 export interface Attendance extends BaseEntity {
@@ -241,16 +249,15 @@ export interface Attendance extends BaseEntity {
   date: string;
   check_in?: string;
   check_out?: string;
-  status: 'present' | 'absent' | 'late' | 'half_day';
 }
 
 export interface PayrollRun extends BaseEntity {
   month: string;
   employee_id: string;
-  basic_salary: number;
+  base: number;
+  allowances: number;
   deductions: number;
-  bonuses: number;
-  net_salary: number;
+  net_pay: number;
 }
 
 // System Entities
@@ -258,8 +265,11 @@ export interface Setting extends BaseEntity {
   key: string;
   value: string;
   scope: 'global' | 'user';
+  scope_id?: string;
 }
 
+// Out of scope for today's pass (audit-service.ts / audit-log-repository.ts
+// predate it and aren't touched here) — left as before.
 export interface AuditLog extends BaseEntity {
   user_id: string;
   table_name: string;
@@ -271,8 +281,8 @@ export interface AuditLog extends BaseEntity {
 
 export interface UserLocation extends BaseEntity {
   user_id: string;
-  latitude: number;
-  longitude: number;
-  recorded_at: string;
+  lat: number;
+  lng: number;
   accuracy?: number;
+  recorded_at: string;
 }

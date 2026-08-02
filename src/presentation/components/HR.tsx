@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../infrastructure/database/dexie';
-import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { formatCurrency, formatDate } from '../../shared/utils/format';
+import { getErrorMessage } from '../../shared/utils/errors';
+import { useEmployees, useAttendance, usePayrollRuns } from '../../application/hooks/use-hr';
+import { PaginationParams } from '../../core/types';
+import { useToast } from './ui/Toast';
 import {
   Users,
   Clock,
@@ -8,21 +11,33 @@ import {
   CheckCircle
 } from 'lucide-react';
 
+// Stable reference (not recreated per render) so the data hooks below don't
+// re-fetch in a loop — their internal useCallback/useEffect deps include
+// this params object by identity.
+const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
+
 export const HR: React.FC = () => {
+  const { success, error, warning } = useToast();
+
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'employees' | 'attendance' | 'payroll'>('employees');
 
-  // Master lists
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [attendance, setAttendance] = useState<any[]>([]);
-  const [payrollRuns, setPayrollRuns] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
+  // Data, sourced from the service/hook layer instead of Dexie directly.
+  const { employees: employeesResult, createEmployee } = useEmployees(undefined, UNPAGINATED);
+  const employees = employeesResult.data;
+
+  const { attendance: attendanceResult, recordAttendance } = useAttendance(undefined, UNPAGINATED);
+  const attendance = attendanceResult.data;
+  const attendanceSorted = [...attendance].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const { payrollRuns: payrollRunsResult, createPayrollRun } = usePayrollRuns(undefined, UNPAGINATED);
+  const payrollRuns = payrollRunsResult.data;
 
   // 1. Employee State
   const [empName, setEmpName] = useState('');
   const [empRole, setEmpRole] = useState('عامل تشغيل خلط السائل');
-  const [empBaseSalary, setEmpBaseSalary] = useState('2500');
-  const [empAllowances, setEmpAllowances] = useState('200');
+  const [empSalary, setEmpSalary] = useState('2500');
+  const [empAllowances, setEmpAllowances] = useState('0');
   const [empDeductions, setEmpDeductions] = useState('0');
 
   // 2. Attendance State
@@ -34,23 +49,15 @@ export const HR: React.FC = () => {
   // 3. Payroll State
   const [payrollMonth, setPayrollMonth] = useState('2026-07');
 
+  // Default selection, once the employees list has loaded (mirrors the old
+  // loadData() one-time defaulting, but reactive to the hook's own load
+  // instead of a single combined fetch).
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const listEmps = await db.employees.toArray();
-    const listAtts = await db.attendance.toArray();
-    const listPayrolls = await db.payroll_runs.toArray();
-    const listAccs = await db.accounts.toArray();
-
-    setEmployees(listEmps);
-    setAttendance(listAtts.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-    setPayrollRuns(listPayrolls);
-    setAccounts(listAccs);
-
-    if (listEmps.length > 0) setAttEmployee(listEmps[0].id);
-  };
+    if (employees.length > 0 && !attEmployee) {
+      setAttEmployee(employees[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
 
   // Add Employee
   const handleAddEmployee = async (e: React.FormEvent) => {
@@ -58,27 +65,22 @@ export const HR: React.FC = () => {
     if (!empName.trim()) return;
 
     try {
-      const id = crypto.randomUUID();
-      const empObj = {
-        id,
+      await createEmployee({
         name: empName.trim(),
         role: empRole,
-        base_salary: Number(empBaseSalary),
-        allowances: Number(empAllowances),
-        deductions: Number(empDeductions),
-        join_date: new Date().toISOString().split('T')[0],
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('employees', 'insert', id, empObj);
+        base_salary: Number(empSalary),
+        allowances: Number(empAllowances) || 0,
+        deductions: Number(empDeductions) || 0,
+        join_date: new Date().toISOString().split('T')[0]
+      });
 
       setEmpName('');
-      setEmpBaseSalary('2500');
-      setEmpAllowances('200');
+      setEmpSalary('2500');
+      setEmpAllowances('0');
       setEmpDeductions('0');
-      await loadData();
-      alert('تم تسجيل الموظف الجديد في الموارد البشرية بنجاح!');
-    } catch (e: any) {
-      alert(e.message);
+      success('تم تسجيل الموظف الجديد في الموارد البشرية بنجاح!');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تسجيل الموظف'));
     }
   };
 
@@ -88,28 +90,25 @@ export const HR: React.FC = () => {
     if (!attEmployee || !attDate) return;
 
     try {
-      const id = crypto.randomUUID();
-      const attObj = {
-        id,
+      await recordAttendance({
         employee_id: attEmployee,
         date: attDate,
         check_in: attCheckIn,
-        check_out: attCheckOut,
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('attendance', 'insert', id, attObj);
-      await loadData();
-      alert('تم تسجيل حضور وانصراف الموظف لهذا اليوم بنجاح!');
-    } catch (err: any) {
-      alert("خطأ: الموظف قد يكون مسجلاً بالفعل حضور لهذا التاريخ.");
+        check_out: attCheckOut
+      });
+      success('تم تسجيل حضور وانصراف الموظف لهذا اليوم بنجاح!');
+    } catch (err) {
+      error(getErrorMessage(err, 'خطأ: الموظف قد يكون مسجلاً بالفعل حضور لهذا التاريخ.'));
     }
   };
 
-  // Payroll execution
+  // Payroll execution — net-salary calculation and journal-entry posting
+  // (debit Salaries Expense / credit cash) now happen inside
+  // HRService.createPayrollRun instead of here.
   const handleRunPayroll = async () => {
     if (!payrollMonth) return;
     if (employees.length === 0) {
-      alert('لا يوجد موظفون مسجلون لتوليد الرواتب لهم.');
+      warning('لا يوجد موظفون مسجلون لتوليد الرواتب لهم.');
       return;
     }
 
@@ -117,77 +116,28 @@ export const HR: React.FC = () => {
       let runCount = 0;
       for (const emp of employees) {
         // Check if already run for this employee and month
-        const exists = payrollRuns.some((pr: any) => pr.month === payrollMonth && pr.employee_id === emp.id);
+        const exists = payrollRuns.some((pr) => pr.month === payrollMonth && pr.employee_id === emp.id);
         if (exists) continue;
 
-        const id = crypto.randomUUID();
-        const base = Number(emp.base_salary);
-        const allowances = Number(emp.allowances);
-        const deductions = Number(emp.deductions);
-        const netPay = base + allowances - deductions;
-
-        const payrollObj = {
-          id,
+        await createPayrollRun({
           month: payrollMonth,
           employee_id: emp.id,
-          base,
-          allowances,
-          deductions,
-          net_pay: netPay,
-          created_at: new Date().toISOString()
-        };
-        await queueOfflineWrite('payroll_runs', 'insert', id, payrollObj);
-
-        // Generate dynamic expense in Accounting module
-        const salariesExpAccId = accounts.find((a: any) => a.code === '60101')?.id; // Salaries Expense Account
-        const cashAccId = accounts.find((a: any) => a.category === 'cash')?.id; // cash account
-        if (salariesExpAccId && cashAccId) {
-          // Create payroll expense entry
-          const expId = crypto.randomUUID();
-          const expObj = {
-            id: expId,
-            category_id: salariesExpAccId,
-            amount: netPay,
-            date: new Date().toISOString().split('T')[0],
-            account_id: cashAccId,
-            notes: `مصروف رواتب وأجور شهر ${payrollMonth} للموظف ${emp.name}`,
-            created_at: new Date().toISOString()
-          };
-          await queueOfflineWrite('expenses', 'insert', expId, expObj);
-
-          // Create general ledger transactions
-          const tx1 = crypto.randomUUID();
-          await queueOfflineWrite('account_transactions', 'insert', tx1, {
-            id: tx1,
-            account_id: salariesExpAccId,
-            ref_table: 'payroll_runs',
-            ref_id: id,
-            debit: netPay,
-            credit: 0,
-            date: new Date().toISOString().split('T')[0]
-          });
-          const tx2 = crypto.randomUUID();
-          await queueOfflineWrite('account_transactions', 'insert', tx2, {
-            id: tx2,
-            account_id: cashAccId,
-            ref_table: 'payroll_runs',
-            ref_id: id,
-            debit: 0,
-            credit: netPay,
-            date: new Date().toISOString().split('T')[0]
-          });
-        }
+          base: Number(emp.base_salary) || 0,
+          allowances: Number(emp.allowances) || 0,
+          deductions: Number(emp.deductions) || 0,
+          // overwritten by HRService.createPayrollRun with the real computed net pay
+          net_pay: 0
+        });
         runCount++;
       }
 
-      await loadData();
       if (runCount > 0) {
-        alert(`تم ترحيل مسيرات الرواتب لشهر ${payrollMonth} لعدد ${runCount} موظفاً وتوليد مصروفات الحسابات تلقائياً!`);
+        success(`تم ترحيل مسيرات الرواتب لشهر ${payrollMonth} لعدد ${runCount} موظفاً وتوليد مصروفات الحسابات تلقائياً!`);
       } else {
-        alert('مسيرات الرواتب لهذا الشهر تم توليدها مسبقاً بالكامل.');
+        warning('مسيرات الرواتب لهذا الشهر تم توليدها مسبقاً بالكامل.');
       }
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل ترحيل الرواتب'));
     }
   };
 
@@ -264,36 +214,35 @@ export const HR: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الراتب الأساسي شهرياً (ج.م)</label>
+                <label className="block text-xs font-bold text-gray-600 mb-1">الراتب الأساسي الشهري (ج.م)</label>
                 <input
                   type="number"
                   required
-                  value={empBaseSalary}
-                  onChange={(e) => setEmpBaseSalary(e.target.value)}
+                  value={empSalary}
+                  onChange={(e) => setEmpSalary(e.target.value)}
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left font-semibold"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">البدلات الثابتة (سكن، نقل)</label>
-                <input
-                  type="number"
-                  required
-                  value={empAllowances}
-                  onChange={(e) => setEmpAllowances(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الاستقطاعات والخصومات الثابتة</label>
-                <input
-                  type="number"
-                  required
-                  value={empDeductions}
-                  onChange={(e) => setEmpDeductions(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">بدلات (ج.م)</label>
+                  <input
+                    type="number"
+                    value={empAllowances}
+                    onChange={(e) => setEmpAllowances(e.target.value)}
+                    className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-600 mb-1">خصومات ثابتة (ج.م)</label>
+                  <input
+                    type="number"
+                    value={empDeductions}
+                    onChange={(e) => setEmpDeductions(e.target.value)}
+                    className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left font-semibold"
+                  />
+                </div>
               </div>
 
               <button
@@ -314,20 +263,16 @@ export const HR: React.FC = () => {
                   <tr className="text-xs font-bold text-gray-500">
                     <th className="py-3 px-4">اسم الموظف</th>
                     <th className="py-3 px-4">المسمى الوظيفي</th>
-                    <th className="py-3 px-4 text-center">الراتب الأساسي</th>
-                    <th className="py-3 px-4 text-center">البدلات</th>
-                    <th className="py-3 px-4 text-center">صافي الراتب المتوقع</th>
+                    <th className="py-3 px-4 text-center">الراتب الشهري</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
                   {employees.map(emp => (
                     <tr key={emp.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 font-bold text-gray-800">{emp.name}</td>
-                      <td className="py-3 px-4 text-gray-600">{emp.role}</td>
-                      <td className="py-3 px-4 text-center font-mono">{emp.base_salary} ج.م</td>
-                      <td className="py-3 px-4 text-center font-mono">+{emp.allowances} ج.م</td>
+                      <td className="py-3 px-4 text-gray-600">{emp.role || '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-blue-600">
-                        {Number(emp.base_salary) + Number(emp.allowances) - Number(emp.deductions)} ج.م
+                        {formatCurrency(Number(emp.base_salary) || 0)}
                       </td>
                     </tr>
                   ))}
@@ -416,12 +361,12 @@ export const HR: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
-                  {attendance.map(a => {
+                  {attendanceSorted.map(a => {
                     const empName = employees.find(e => e.id === a.employee_id)?.name || '';
                     return (
                       <tr key={a.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{empName}</td>
-                        <td className="py-3 px-4 text-gray-600 text-xs">{new Date(a.date).toLocaleDateString('ar-EG')}</td>
+                        <td className="py-3 px-4 text-gray-600 text-xs">{formatDate(a.date)}</td>
                         <td className="py-3 px-4 text-center font-mono text-green-600">{a.check_in}</td>
                         <td className="py-3 px-4 text-center font-mono text-red-600">{a.check_out || 'مستمر بالعمل'}</td>
                         <td className="py-3 px-4 text-center">
@@ -489,9 +434,9 @@ export const HR: React.FC = () => {
                       <tr key={pr.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{empName}</td>
                         <td className="py-3 px-4 font-bold font-mono text-gray-700">{pr.month}</td>
-                        <td className="py-3 px-4 text-center font-mono">{pr.base} ج.م</td>
-                        <td className="py-3 px-4 text-center font-mono">+{pr.allowances} / -{pr.deductions}</td>
-                        <td className="py-3 px-4 text-center font-mono font-bold text-green-600">{pr.net_pay} ج.م</td>
+                        <td className="py-3 px-4 text-center font-mono">{formatCurrency(pr.base)}</td>
+                        <td className="py-3 px-4 text-center font-mono">+{formatCurrency(pr.allowances)} / -{formatCurrency(pr.deductions)}</td>
+                        <td className="py-3 px-4 text-center font-mono font-bold text-green-600">{formatCurrency(pr.net_pay)}</td>
                         <td className="py-3 px-4 text-center">
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                             <CheckCircle className="h-3 w-3" />
