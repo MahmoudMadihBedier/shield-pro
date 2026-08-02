@@ -29,7 +29,8 @@ export class PurchaseService implements IPurchaseService {
 
   async createInvoice(
     invoice: Omit<PurchaseInvoice, 'id' | 'created_at' | 'updated_at'>,
-    lines: Omit<PurchaseInvoiceLine, 'id' | 'created_at' | 'updated_at'>[]
+    lines: Omit<PurchaseInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
+    warehouseId: string
   ): Promise<PurchaseInvoice> {
     const newInvoice = await this.purchaseInvoiceRepository.create(invoice);
     await queueOfflineWrite('purchase_invoices', 'insert', newInvoice.id, newInvoice);
@@ -43,25 +44,20 @@ export class PurchaseService implements IPurchaseService {
 
       // Add received raw/packaging materials to stock, mirroring
       // Purchases.tsx handleSaveInvoice: movement_type 'purchase_in',
-      // positive qty, linked back to the invoice.
+      // positive qty, linked back to the invoice. warehouseId is passed in
+      // (not read off the invoice) because purchase_invoices has no
+      // warehouse_id column — only stock_movements does.
       const movement = await this.stockMovementRepository.create({
         item_id: newLine.item_id,
-        warehouse_id: newInvoice.warehouse_id,
+        warehouse_id: warehouseId,
         qty: Math.abs(newLine.qty),
         movement_type: 'purchase_in',
         batch_no: newInvoice.invoice_no,
-        reference_type: 'purchase_invoices',
-        reference_id: newInvoice.id
-      });
-      // See SalesService.createInvoice for why ref_table/ref_id/moved_at are
-      // bridged onto the synced payload here (real runtime schema, not what
-      // the StockMovement entity type declares).
-      await queueOfflineWrite('stock_movements', 'insert', movement.id, {
-        ...movement,
         ref_table: 'purchase_invoices',
         ref_id: newInvoice.id,
-        moved_at: movement.created_at
+        moved_at: new Date().toISOString()
       });
+      await queueOfflineWrite('stock_movements', 'insert', movement.id, movement);
     }
 
     // Journal entry, mirroring Purchases.tsx handleSaveInvoice: debit COGS

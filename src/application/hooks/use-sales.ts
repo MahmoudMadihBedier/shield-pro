@@ -77,12 +77,13 @@ export function useSalesInvoices(filter?: EntityFilter, params?: PaginationParam
 
   const createInvoice = useCallback(async (
     invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>,
-    lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[]
+    lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
+    warehouseId: string
   ) => {
     setLoading(true);
     setError(null);
     try {
-      const newInvoice = await salesService.createInvoice(invoice, lines);
+      const newInvoice = await salesService.createInvoice(invoice, lines, warehouseId);
       await loadInvoices();
       return newInvoice;
     } catch (err) {

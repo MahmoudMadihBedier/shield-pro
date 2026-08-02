@@ -40,7 +40,8 @@ export class SalesService implements ISalesService {
 
   async createInvoice(
     invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>,
-    lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[]
+    lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
+    warehouseId: string
   ): Promise<SalesInvoice> {
     const newInvoice = await this.salesInvoiceRepository.create(invoice);
     await queueOfflineWrite('sales_invoices', 'insert', newInvoice.id, newInvoice);
@@ -54,26 +55,19 @@ export class SalesService implements ISalesService {
 
       // Deduct finished-goods stock, mirroring Sales.tsx handleSaveInvoice:
       // movement_type 'sale_out', negative qty, linked back to the invoice.
+      // warehouseId is passed in (not read off the invoice) because
+      // sales_invoices has no warehouse_id column — only stock_movements does.
       const movement = await this.stockMovementRepository.create({
         item_id: newLine.item_id,
-        warehouse_id: newInvoice.warehouse_id,
+        warehouse_id: warehouseId,
         qty: -Math.abs(newLine.qty),
         movement_type: 'sale_out',
         batch_no: newInvoice.invoice_no,
-        reference_type: 'sales_invoices',
-        reference_id: newInvoice.id
-      });
-      // The stock_movements rows written by hand in Sales.tsx/Purchases.tsx/
-      // Manufacturing.tsx carry ref_table/ref_id/moved_at, not the entity
-      // type's reference_type/reference_id/created_at — mirror that shape on
-      // the synced payload (same bridging AccountingService.createTransaction
-      // does for account_transactions) so nothing reading the real schema breaks.
-      await queueOfflineWrite('stock_movements', 'insert', movement.id, {
-        ...movement,
         ref_table: 'sales_invoices',
         ref_id: newInvoice.id,
-        moved_at: movement.created_at
+        moved_at: new Date().toISOString()
       });
+      await queueOfflineWrite('stock_movements', 'insert', movement.id, movement);
     }
 
     // Journal entry, mirroring Sales.tsx handleSaveInvoice: cash sales debit
@@ -192,12 +186,6 @@ export class SalesService implements ISalesService {
   // (credit = amount) + sales returns (credit = total), filtered to the date
   // range, sorted chronologically for a running balance, then returned
   // newest-first to match the component's display order.
-  //
-  // One deliberate deviation from the original component logic: the component
-  // filters/sorts on an untyped `date` field that isn't part of the typed
-  // SalesInvoice/ReceiptVoucher/SalesReturn entities here, so this uses
-  // `created_at` instead (see task note). Business rules (which transactions
-  // count as debit/credit, opening balance handling) are unchanged.
   async getCustomerStatement(customerId: string, startDate: string, endDate: string): Promise<StatementEntry[]> {
     const customer = await this.customerRepository.findById(customerId);
     if (!customer) return [];
@@ -206,7 +194,7 @@ export class SalesService implements ISalesService {
     const transactions: Entry[] = [];
 
     transactions.push({
-      date: customer.created_at,
+      date: customer.created_at.split('T')[0],
       type: 'opening_balance',
       description: 'الرصيد الافتتاحي عند التسجيل',
       debit: Number(customer.opening_balance) || 0,
@@ -216,7 +204,7 @@ export class SalesService implements ISalesService {
     const invoices = await this.salesInvoiceRepository.findByCustomerId(customerId);
     for (const inv of invoices) {
       transactions.push({
-        date: inv.created_at,
+        date: inv.date,
         type: 'sales_invoice',
         description: `فاتورة مبيعات رقم ${inv.invoice_no}`,
         debit: Number(inv.total) || 0,
@@ -227,7 +215,7 @@ export class SalesService implements ISalesService {
     const vouchers = await this.receiptVoucherRepository.findByCustomerId(customerId);
     for (const v of vouchers) {
       transactions.push({
-        date: v.created_at,
+        date: v.date,
         type: 'receipt_voucher',
         description: `سند قبض رقم ${v.voucher_no}`,
         debit: 0,
@@ -241,7 +229,7 @@ export class SalesService implements ISalesService {
     );
     for (const r of returnsResult.data) {
       transactions.push({
-        date: r.created_at,
+        date: r.date,
         type: 'sales_return',
         description: `مرتجع مبيعات رقم ${r.return_no}`,
         debit: 0,

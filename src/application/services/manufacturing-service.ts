@@ -24,9 +24,31 @@ export class ManufacturingService implements IManufacturingService {
     return await this.productionBatchRepository.findAll(filter, params);
   }
 
+  // Mirrors Manufacturing.tsx's original handleCreateProductionOrder: create
+  // the draft batch, then pre-compute (but don't yet move stock for) the
+  // BOM-driven consumption plan from the 'batch'-stage recipe, storing one
+  // production_consumptions row per component. Actual stock movements only
+  // happen later, in completeBatch, using these stored quantities.
   async createBatch(batch: Omit<ProductionBatch, 'id' | 'created_at' | 'updated_at'>): Promise<ProductionBatch> {
     const newBatch = await this.productionBatchRepository.create(batch);
     await queueOfflineWrite('production_batches', 'insert', newBatch.id, newBatch);
+
+    const recipes = await this.itemRecipeRepository.findByParentItemId(newBatch.item_id);
+    const bomComponents = recipes.filter((r) => r.recipe_type === 'batch');
+
+    for (const component of bomComponents) {
+      const reqQty = component.mode === 'percentage'
+        ? (component.quantity_or_percentage / 100) * newBatch.planned_qty
+        : component.quantity_or_percentage * newBatch.planned_qty;
+
+      const consumption = await this.productionConsumptionRepository.create({
+        batch_id: newBatch.id,
+        raw_item_id: component.component_item_id,
+        qty_consumed: reqQty
+      });
+      await queueOfflineWrite('production_consumptions', 'insert', consumption.id, consumption);
+    }
+
     return newBatch;
   }
 
@@ -36,75 +58,53 @@ export class ManufacturingService implements IManufacturingService {
     return updatedBatch;
   }
 
-  async completeBatch(id: string, actualQty: number): Promise<ProductionBatch> {
+  // Mirrors Manufacturing.tsx's original confirmProductionBatch: mark the
+  // batch completed, deduct the *stored* consumption-plan quantities (not
+  // recomputed from the recipe again) as 'production_consumption' stock
+  // movements, and add a 'production_output' movement for the actual
+  // produced qty. warehouseId is passed in (not read off the batch) because
+  // production_batches has no warehouse_id column — only stock_movements does.
+  async completeBatch(id: string, actualQty: number, actualWastePct: number, warehouseId: string): Promise<ProductionBatch> {
     const batch = await this.productionBatchRepository.findById(id);
     if (!batch) {
       throw new Error('Production batch not found');
     }
 
-    // Consumption movements for raw materials, mirroring Manufacturing.tsx
-    // confirmProductionBatch: required qty is driven by the recipe (BOM) for
-    // this batch's item, scaled by the actual produced qty, deducted as
-    // negative 'consumption' stock movements and recorded in
-    // production_consumptions.
-    const recipes = await this.itemRecipeRepository.findByParentItemId(batch.item_id);
-    const productionRecipes = recipes.filter((r) => r.recipe_type === 'production');
-
-    for (const recipe of productionRecipes) {
-      const plannedQty = recipe.quantity_or_percentage * batch.planned_qty;
-      const consumedQty = recipe.quantity_or_percentage * actualQty;
-
-      const consumption = await this.productionConsumptionRepository.create({
-        batch_id: batch.id,
-        raw_item_id: recipe.component_item_id,
-        planned_qty: plannedQty,
-        actual_qty: consumedQty
-      });
-      await queueOfflineWrite('production_consumptions', 'insert', consumption.id, consumption);
-
-      const consumptionMovement = await this.stockMovementRepository.create({
-        item_id: recipe.component_item_id,
-        warehouse_id: batch.warehouse_id,
-        qty: -consumedQty,
-        movement_type: 'consumption',
-        batch_no: batch.batch_no,
-        reference_type: 'production_batches',
-        reference_id: batch.id
-      });
-      // See SalesService.createInvoice for why ref_table/ref_id/moved_at are
-      // bridged onto the synced payload here (real runtime schema, not what
-      // the StockMovement entity type declares).
-      await queueOfflineWrite('stock_movements', 'insert', consumptionMovement.id, {
-        ...consumptionMovement,
-        ref_table: 'production_batches',
-        ref_id: batch.id,
-        moved_at: consumptionMovement.created_at
-      });
-    }
-
-    // Production/receipt movement for the finished item, mirroring
-    // Manufacturing.tsx: positive qty for the actual produced amount.
-    const outputMovement = await this.stockMovementRepository.create({
-      item_id: batch.item_id,
-      warehouse_id: batch.warehouse_id,
-      qty: actualQty,
-      movement_type: 'production',
-      batch_no: batch.batch_no,
-      reference_type: 'production_batches',
-      reference_id: batch.id
-    });
-    await queueOfflineWrite('stock_movements', 'insert', outputMovement.id, {
-      ...outputMovement,
-      ref_table: 'production_batches',
-      ref_id: batch.id,
-      moved_at: outputMovement.created_at
-    });
-
     const updatedBatch = await this.productionBatchRepository.update(id, {
       status: 'completed',
-      actual_qty: actualQty
+      actual_qty: actualQty,
+      actual_waste_pct: actualWastePct,
+      produced_at: new Date().toISOString()
     });
     await queueOfflineWrite('production_batches', 'update', id, updatedBatch);
+
+    const consumptions = await this.productionConsumptionRepository.findByBatchId(id);
+    for (const consumption of consumptions) {
+      const movement = await this.stockMovementRepository.create({
+        item_id: consumption.raw_item_id,
+        warehouse_id: warehouseId,
+        qty: -Number(consumption.qty_consumed),
+        movement_type: 'production_consumption',
+        batch_no: batch.batch_no,
+        ref_table: 'production_batches',
+        ref_id: batch.id,
+        moved_at: new Date().toISOString()
+      });
+      await queueOfflineWrite('stock_movements', 'insert', movement.id, movement);
+    }
+
+    const outputMovement = await this.stockMovementRepository.create({
+      item_id: batch.item_id,
+      warehouse_id: warehouseId,
+      qty: actualQty,
+      movement_type: 'production_output',
+      batch_no: batch.batch_no,
+      ref_table: 'production_batches',
+      ref_id: batch.id,
+      moved_at: new Date().toISOString()
+    });
+    await queueOfflineWrite('stock_movements', 'insert', outputMovement.id, outputMovement);
+
     return updatedBatch;
   }
 

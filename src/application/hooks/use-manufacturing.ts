@@ -105,11 +105,11 @@ export function useProductionBatches(filter?: EntityFilter, params?: PaginationP
     }
   }, [manufacturingService, loadBatches]);
 
-  const completeBatch = useCallback(async (id: string, actualQty: number) => {
+  const completeBatch = useCallback(async (id: string, actualQty: number, actualWastePct: number, warehouseId: string) => {
     setLoading(true);
     setError(null);
     try {
-      const updatedBatch = await manufacturingService.completeBatch(id, actualQty);
+      const updatedBatch = await manufacturingService.completeBatch(id, actualQty, actualWastePct, warehouseId);
       await loadBatches();
       return updatedBatch;
     } catch (err) {
