@@ -112,7 +112,13 @@ export class FormValidator {
     const errors: Record<string, string> = {};
     let isValid = true;
 
-    for (const [fieldName, validator] of this.validators.entries()) {
+    // Only validate fields actually present in the submitted data — a
+    // validator can have fields registered for a form shape it doesn't
+    // always see in full (e.g. an auth validator shared between a login
+    // form with no `name` field and a signup form that has one).
+    for (const fieldName of Object.keys(data)) {
+      const validator = this.validators.get(fieldName);
+      if (!validator) continue;
       const result = validator.validate(data[fieldName]);
       if (!result.isValid) {
         errors[fieldName] = result.message || '';
