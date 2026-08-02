@@ -28,23 +28,7 @@ export class AccountingService implements IAccountingService {
 
   async createTransaction(transaction: Omit<AccountTransaction, 'id' | 'created_at' | 'updated_at'>): Promise<AccountTransaction> {
     const newTransaction = await this.accountTransactionRepository.create(transaction);
-
-    // The account_transactions rows written by hand elsewhere (Sales.tsx,
-    // Purchases.tsx, Accounting.tsx via queueOfflineWrite/postDoubleEntry) also
-    // carry `ref_table`/`ref_id`/`date` fields that reports (e.g. Reports.tsx
-    // date-range P&L filtering) rely on, even though the AccountTransaction
-    // entity type only declares reference_id/reference_type. Mirror that shape
-    // on the synced payload so this service stays interoperable with the
-    // existing manual call sites and inline reports.
-    const dateStr = newTransaction.created_at.split('T')[0];
-    const syncPayload: any = {
-      ...newTransaction,
-      date: dateStr,
-      ref_table: transaction.reference_type,
-      ref_id: transaction.reference_id
-    };
-
-    await queueOfflineWrite('account_transactions', 'insert', newTransaction.id, syncPayload);
+    await queueOfflineWrite('account_transactions', 'insert', newTransaction.id, newTransaction);
     return newTransaction;
   }
 
@@ -70,11 +54,7 @@ export class AccountingService implements IAccountingService {
     const revenueAccounts = await this.accountRepository.findByCategory('revenue');
     const expenseAccounts = await this.accountRepository.findByCategory('expense');
 
-    const inRange = (tx: any): boolean => {
-      const txDate: string | undefined = tx.date || (tx.created_at ? tx.created_at.split('T')[0] : undefined);
-      if (!txDate) return false;
-      return txDate >= startDate && txDate <= endDate;
-    };
+    const inRange = (tx: AccountTransaction): boolean => tx.date >= startDate && tx.date <= endDate;
 
     let revenue = 0;
     for (const account of revenueAccounts) {

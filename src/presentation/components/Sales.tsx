@@ -251,12 +251,11 @@ export const Sales: React.FC = () => {
         {
           invoice_no: `PENDING-INV-${Date.now()}`,
           customer_id: invCustomer,
-          warehouse_id: invWarehouse,
           date: new Date().toISOString().split('T')[0],
           payment_method: invPaymentMethod,
           subtotal: sub,
           discount: disc,
-          vat_amount: tax,
+          tax,
           total,
           status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid'
         },
@@ -273,7 +272,8 @@ export const Sales: React.FC = () => {
             discount: lDisc,
             line_total: (lQty * lPrice) - lDisc
           };
-        })
+        }),
+        invWarehouse
       );
 
       setInvDiscount('0');

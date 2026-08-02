@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../infrastructure/database/dexie';
-import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
+import { formatCurrency, formatDate } from '../../shared/utils/format';
+import { getErrorMessage } from '../../shared/utils/errors';
+import { useSuppliers, usePurchaseInvoices, usePaymentVouchers } from '../../application/hooks/use-purchases';
+import { useAccounts } from '../../application/hooks/use-accounting';
+import { useInventory } from '../../application/hooks/use-inventory';
+import { Warehouse } from '../../core/domain/entities';
+import { PaginationParams } from '../../core/types';
 import {
   Users,
   Plus,
@@ -11,17 +17,38 @@ import {
   TrendingUp
 } from 'lucide-react';
 
+// Stable reference (not recreated per render) so the data hooks below don't
+// re-fetch in a loop — their internal useCallback/useEffect deps include
+// this params object by identity.
+const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
+
 export const Purchases: React.FC = () => {
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'suppliers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
 
-  // Master lists
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
-  const [paymentVouchers, setPaymentVouchers] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
+  // Data, sourced from the service/hook layer instead of Dexie directly.
+  const { suppliers: suppliersResult, createSupplier } = useSuppliers();
+  const suppliers = suppliersResult.data;
+
+  const { invoices: purchaseInvoicesResult, createInvoice } = usePurchaseInvoices(undefined, UNPAGINATED);
+  const purchaseInvoices = purchaseInvoicesResult.data;
+
+  const { vouchers: paymentVouchersResult, createPaymentVoucher } = usePaymentVouchers(undefined, UNPAGINATED);
+  const paymentVouchers = paymentVouchersResult.data;
+
+  const { accounts: accountsResult } = useAccounts();
+  const accounts = accountsResult.data;
+
+  const { items: allItemsResult } = useInventory(undefined, UNPAGINATED);
+  const allItems = allItemsResult.data;
+  const items = allItems.filter((i) => i.type === 'raw_material' || i.type === 'packaging');
+
+  // No dedicated warehouse service/hook yet — matches the same direct
+  // RepositoryFactory usage Sales.tsx uses for the same reason.
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  useEffect(() => {
+    RepositoryFactory.getWarehouseRepository().findActive().then(setWarehouses);
+  }, []);
 
   // 1. Supplier State
   const [suppName, setSuppName] = useState('');
@@ -52,38 +79,39 @@ export const Purchases: React.FC = () => {
   const [statementEnd, setStatementEndDate] = useState('');
   const [statementRecords, setStatementRecords] = useState<any[]>([]);
 
+  // Default selections, once each list has loaded (mirrors the old loadData()
+  // one-time defaulting, but reactive to each hook's own load instead of a
+  // single combined fetch).
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    const listSupps = await db.suppliers.toArray();
-    const listItems = await db.items.filter((i: any) => i.type === 'raw_material' || i.type === 'packaging').toArray();
-    const listInvs = await db.purchase_invoices.toArray();
-    const listVouch = await db.payment_vouchers.toArray();
-    const listWh = await db.warehouses.filter((w: any) => w.is_active).toArray();
-    const listAccs = await db.accounts.toArray();
-
-    setSuppliers(listSupps);
-    setItems(listItems);
-    setPurchaseInvoices(listInvs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-    setPaymentVouchers(listVouch);
-    setWarehouses(listWh);
-    setAccounts(listAccs);
-
-    if (listSupps.length > 0) {
-      setInvSupplier(listSupps[0].id);
-      setVouchSupplier(listSupps[0].id);
-      setStatementSuppId(listSupps[0].id);
+    if (suppliers.length > 0 && !invSupplier) {
+      setInvSupplier(suppliers[0].id);
+      setVouchSupplier(suppliers[0].id);
+      setStatementSuppId(suppliers[0].id);
     }
-    if (listWh.length > 0) setInvWarehouse(listWh[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suppliers]);
 
-    const financial = listAccs.filter((a: any) => a.category === 'cash' || a.category === 'bank');
-    if (financial.length > 0) setVouchAccountId(financial[0].id);
+  useEffect(() => {
+    if (warehouses.length > 0 && !invWarehouse) {
+      setInvWarehouse(warehouses[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouses]);
 
-    setVatEnabled(await getSettingBool('vat_enabled', false));
-    setVatPct(Number(await getSetting('default_vat_pct', '14')));
-  };
+  useEffect(() => {
+    const financial = accounts.filter((a) => a.category === 'cash' || a.category === 'bank');
+    if (financial.length > 0 && !vouchAccountId) {
+      setVouchAccountId(financial[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts]);
+
+  useEffect(() => {
+    (async () => {
+      setVatEnabled(await getSettingBool('vat_enabled', false));
+      setVatPct(Number(await getSetting('default_vat_pct', '14')));
+    })();
+  }, []);
 
   // Add Supplier
   const handleAddSupplier = async (e: React.FormEvent) => {
@@ -91,24 +119,19 @@ export const Purchases: React.FC = () => {
     if (!suppName.trim()) return;
 
     try {
-      const id = crypto.randomUUID();
-      const suppObj = {
-        id,
+      await createSupplier({
         name: suppName.trim(),
-        phone: suppPhone.trim() || null,
-        address: suppAddress.trim() || null,
-        opening_balance: Number(suppOpening),
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('suppliers', 'insert', id, suppObj);
+        phone: suppPhone.trim() || undefined,
+        address: suppAddress.trim() || undefined,
+        opening_balance: Number(suppOpening)
+      });
       setSuppName('');
       setSuppPhone('');
       setSuppAddress('');
       setSuppOpening('0');
-      await loadData();
       alert('تم تسجيل المورد بنجاح!');
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(getErrorMessage(e, 'فشل تسجيل المورد'));
     }
   };
 
@@ -150,7 +173,8 @@ export const Purchases: React.FC = () => {
     setInvLines(updated);
   };
 
-  // Save Purchase Invoice
+  // Save Purchase Invoice — stock addition and journal-entry posting now
+  // happen inside PurchaseService.createInvoice instead of here.
   const handleSaveInvoice = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invSupplier || !invWarehouse || invLines.some((l: any) => !l.item_id)) {
@@ -159,197 +183,69 @@ export const Purchases: React.FC = () => {
     }
 
     try {
-      const invId = crypto.randomUUID();
       const sub = calculateInvoiceSubtotal();
       const disc = Number(invDiscount) || 0;
       const tax = calculateInvoiceTax(sub);
       const total = calculateInvoiceTotal();
 
-      const tempNo = `PENDING-PUR-${Date.now()}`;
-
-      // 1. Create Purchase Invoice Record
-      const invoiceObj = {
-        id: invId,
-        invoice_no: tempNo,
-        supplier_id: invSupplier,
-        date: new Date().toISOString().split('T')[0],
-        payment_method: invPaymentMethod,
-        subtotal: sub,
-        discount: disc,
-        tax: tax,
-        total: total,
-        status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('purchase_invoices', 'insert', invId, invoiceObj);
-
-      // 2. Save Lines & Add stock via Movements
-      for (const line of invLines) {
-        const lineId = crypto.randomUUID();
-        const lQty = Number(line.qty) || 0;
-        const lPrice = Number(line.unit_price) || 0;
-        const lineTotal = lQty * lPrice;
-
-        const lineObj = {
-          id: lineId,
-          invoice_id: invId,
-          item_id: line.item_id,
-          qty: lQty,
-          unit_price: lPrice,
-          discount: 0,
-          line_total: lineTotal,
-          created_at: new Date().toISOString()
-        };
-        await queueOfflineWrite('purchase_invoice_lines', 'insert', lineId, lineObj);
-
-        // Add raw/packaging materials stock movement (positive qty)
-        const movId = crypto.randomUUID();
-        const movObj = {
-          id: movId,
-          item_id: line.item_id,
-          warehouse_id: invWarehouse,
-          batch_no: tempNo,
-          movement_type: 'purchase_in',
-          qty: lQty,
-          ref_table: 'purchase_invoices',
-          ref_id: invId,
-          moved_at: new Date().toISOString()
-        };
-        await queueOfflineWrite('stock_movements', 'insert', movId, movObj);
-      }
-
-      // 3. Accounting Transactions
-      const cogsAcc = accounts.find((a: any) => a.category === 'cogs')?.id;
-      const apAcc = accounts.find((a: any) => a.category === 'ap')?.id;
-      const cashAcc = accounts.find((a: any) => a.category === 'cash')?.id;
-
-      if (invPaymentMethod === 'cash' && cashAcc && cogsAcc) {
-        // Debit COGS/Inventory, Credit Cash
-        const tx1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx1, {
-          id: tx1,
-          account_id: cogsAcc,
-          ref_table: 'purchase_invoices',
-          ref_id: invId,
-          debit: total,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const tx2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx2, {
-          id: tx2,
-          account_id: cashAcc,
-          ref_table: 'purchase_invoices',
-          ref_id: invId,
-          debit: 0,
-          credit: total,
-          date: new Date().toISOString().split('T')[0]
-        });
-      } else if (invPaymentMethod === 'credit' && apAcc && cogsAcc) {
-        // Debit COGS, Credit AP
-        const tx1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx1, {
-          id: tx1,
-          account_id: cogsAcc,
-          ref_table: 'purchase_invoices',
-          ref_id: invId,
-          debit: total,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const tx2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx2, {
-          id: tx2,
-          account_id: apAcc,
-          ref_table: 'purchase_invoices',
-          ref_id: invId,
-          debit: 0,
-          credit: total,
-          date: new Date().toISOString().split('T')[0]
-        });
-      }
+      await createInvoice(
+        {
+          invoice_no: `PENDING-PUR-${Date.now()}`,
+          supplier_id: invSupplier,
+          date: new Date().toISOString().split('T')[0],
+          payment_method: invPaymentMethod,
+          subtotal: sub,
+          discount: disc,
+          tax,
+          total,
+          status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid'
+        },
+        invLines.map((line: any) => {
+          const lQty = Number(line.qty) || 0;
+          const lPrice = Number(line.unit_price) || 0;
+          return {
+            item_id: line.item_id,
+            // overwritten by PurchaseService.createInvoice with the real invoice id
+            invoice_id: '',
+            qty: lQty,
+            unit_price: lPrice,
+            discount: 0,
+            line_total: lQty * lPrice
+          };
+        }),
+        invWarehouse
+      );
 
       setInvDiscount('0');
       setInvLines([{ item_id: '', qty: 1, unit_price: 0 }]);
-      await loadData();
       alert('تم حفظ فاتورة المشتريات وإضافة البضاعة بنجاح!');
-    } catch (e: any) {
-      alert(e.message);
+    } catch (e) {
+      alert(getErrorMessage(e, 'فشل حفظ الفاتورة'));
     }
   };
 
-  // Payment Vouchers (سند صرف)
+  // Payment Vouchers (سند صرف) — linked-invoice status update and
+  // journal-entry posting (debit AP, credit Cash/Bank) now happen inside
+  // PurchaseService.createPaymentVoucher instead of here.
   const handleSavePaymentVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vouchSupplier || !vouchAmount || !vouchAccountId) return;
 
     try {
-      const vId = crypto.randomUUID();
-      const amountNum = Number(vouchAmount);
-      const tempNo = `PENDING-PAY-${Date.now()}`;
-
-      const vObj = {
-        id: vId,
-        voucher_no: tempNo,
+      await createPaymentVoucher({
+        voucher_no: `PENDING-PAY-${Date.now()}`,
         supplier_id: vouchSupplier,
         invoice_id: vouchInvoiceId || null,
-        amount: amountNum,
+        amount: Number(vouchAmount),
         date: new Date().toISOString().split('T')[0],
-        account_id: vouchAccountId,
-        created_at: new Date().toISOString()
-      };
-      await queueOfflineWrite('payment_vouchers', 'insert', vId, vObj);
-
-      if (vouchInvoiceId) {
-        const inv = purchaseInvoices.find((i: any) => i.id === vouchInvoiceId);
-        if (inv) {
-          const existingVouchAmount = paymentVouchers
-            .filter((pv: any) => pv.invoice_id === vouchInvoiceId)
-            .reduce((sum, pv) => sum + Number(pv.amount), 0);
-
-          const newTotalPaid = existingVouchAmount + amountNum;
-          const status = newTotalPaid >= inv.total ? 'paid' : 'partially_paid';
-
-          await queueOfflineWrite('purchase_invoices', 'insert', inv.id, {
-            ...inv,
-            status,
-            updated_at: new Date().toISOString()
-          });
-        }
-      }
-
-      // Accounting Entry: Debit AP, Credit Cash/Bank
-      const apAcc = accounts.find((a: any) => a.category === 'ap')?.id;
-      if (apAcc) {
-        const tx1 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx1, {
-          id: tx1,
-          account_id: apAcc, // AP
-          ref_table: 'payment_vouchers',
-          ref_id: vId,
-          debit: amountNum,
-          credit: 0,
-          date: new Date().toISOString().split('T')[0]
-        });
-        const tx2 = crypto.randomUUID();
-        await queueOfflineWrite('account_transactions', 'insert', tx2, {
-          id: tx2,
-          account_id: vouchAccountId, // Cash/Bank
-          ref_table: 'payment_vouchers',
-          ref_id: vId,
-          debit: 0,
-          credit: amountNum,
-          date: new Date().toISOString().split('T')[0]
-        });
-      }
+        account_id: vouchAccountId
+      });
 
       setVouchAmount('0');
       setVouchInvoiceId('');
-      await loadData();
       alert('تم تسجيل سند الصرف وتحديث أرصدة المورد بنجاح!');
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      alert(getErrorMessage(err, 'فشل حفظ سند الصرف'));
     }
   };
 
@@ -542,11 +438,11 @@ export const Purchases: React.FC = () => {
                       <td className="py-3 px-4 text-gray-600">{s.phone || '-'}</td>
                       <td className="py-3 px-4 text-gray-600">{s.address || '-'}</td>
                       <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">
-                        {(
+                        {formatCurrency(
                           Number(s.opening_balance) +
-                          purchaseInvoices.filter((i: any) => i.supplier_id === s.id).reduce((sum, i) => sum + Number(i.total), 0) -
-                          paymentVouchers.filter((v: any) => v.supplier_id === s.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        ).toFixed(2)} ج.م
+                          purchaseInvoices.filter((i) => i.supplier_id === s.id).reduce((sum, i) => sum + Number(i.total), 0) -
+                          paymentVouchers.filter((v) => v.supplier_id === s.id).reduce((sum, v) => sum + Number(v.amount), 0)
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -678,7 +574,7 @@ export const Purchases: React.FC = () => {
             <div className="space-y-3 text-sm">
               <div className="flex justify-between text-gray-600">
                 <span>المجموع الفرعي:</span>
-                <span className="font-mono font-bold">{calculateInvoiceSubtotal().toFixed(2)} ج.م</span>
+                <span className="font-mono font-bold">{formatCurrency(calculateInvoiceSubtotal())}</span>
               </div>
 
               <div>
@@ -696,13 +592,13 @@ export const Purchases: React.FC = () => {
               {vatEnabled && (
                 <div className="flex justify-between text-gray-600 border-t pt-2">
                   <span>الضريبة المضافة ({vatPct}%):</span>
-                  <span className="font-mono font-bold text-yellow-600">{calculateInvoiceTax(calculateInvoiceSubtotal()).toFixed(2)} ج.م</span>
+                  <span className="font-mono font-bold text-yellow-600">{formatCurrency(calculateInvoiceTax(calculateInvoiceSubtotal()))}</span>
                 </div>
               )}
 
               <div className="flex justify-between text-lg font-bold text-gray-900 border-t pt-3">
                 <span>المجموع الكلي:</span>
-                <span className="font-mono text-blue-600">{calculateInvoiceTotal().toFixed(2)} ج.م</span>
+                <span className="font-mono text-blue-600">{formatCurrency(calculateInvoiceTotal())}</span>
               </div>
             </div>
 
@@ -810,9 +706,9 @@ export const Purchases: React.FC = () => {
                       <tr key={v.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
                         <td className="py-3 px-4 text-gray-700">{sName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{v.amount} ج.م</td>
+                        <td className="py-3 px-4 text-center font-bold text-red-600 font-mono">{formatCurrency(v.amount)}</td>
                         <td className="py-3 px-4 text-gray-600">{accName}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{new Date(v.date).toLocaleDateString('ar-EG')}</td>
+                        <td className="py-3 px-4 text-gray-500 text-xs">{v.date ? formatDate(v.date) : '-'}</td>
                       </tr>
                     );
                   })}
@@ -893,11 +789,11 @@ export const Purchases: React.FC = () => {
                 {statementRecords.length > 0 ? (
                   statementRecords.map((rec, idx) => (
                     <tr key={idx} className="hover:bg-gray-50">
-                      <td className="py-3 px-4 text-gray-700">{rec.date}</td>
+                      <td className="py-3 px-4 text-gray-700">{formatDate(rec.date)}</td>
                       <td className="py-3 px-4 font-semibold text-gray-600">{rec.desc}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.debit > 0 ? `-${rec.debit.toFixed(2)}` : '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.credit > 0 ? `+${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{rec.balance.toFixed(2)} ج.م</td>
+                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{formatCurrency(rec.balance)}</td>
                     </tr>
                   ))
                 ) : (
