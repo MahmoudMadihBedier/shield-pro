@@ -8,6 +8,7 @@ export class ManufacturingService implements IManufacturingService {
   private itemRecipeRepository = RepositoryFactory.getItemRecipeRepository();
   private productionBatchRepository = RepositoryFactory.getProductionBatchRepository();
   private productionConsumptionRepository = RepositoryFactory.getProductionConsumptionRepository();
+  private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
 
   async getRecipes(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ItemRecipe>> {
     return await this.itemRecipeRepository.findAll(filter, params);
@@ -36,10 +37,69 @@ export class ManufacturingService implements IManufacturingService {
   }
 
   async completeBatch(id: string, actualQty: number): Promise<ProductionBatch> {
-    // NOTE: The current UI handler (Manufacturing.tsx) also creates stock
-    // movements here (consuming raw materials, producing finished goods).
-    // Those side effects stay in the component for this pass and will move
-    // into this service in the next phase.
+    const batch = await this.productionBatchRepository.findById(id);
+    if (!batch) {
+      throw new Error('Production batch not found');
+    }
+
+    // Consumption movements for raw materials, mirroring Manufacturing.tsx
+    // confirmProductionBatch: required qty is driven by the recipe (BOM) for
+    // this batch's item, scaled by the actual produced qty, deducted as
+    // negative 'consumption' stock movements and recorded in
+    // production_consumptions.
+    const recipes = await this.itemRecipeRepository.findByParentItemId(batch.item_id);
+    const productionRecipes = recipes.filter((r) => r.recipe_type === 'production');
+
+    for (const recipe of productionRecipes) {
+      const plannedQty = recipe.qty * batch.planned_qty;
+      const consumedQty = recipe.qty * actualQty;
+
+      const consumption = await this.productionConsumptionRepository.create({
+        batch_id: batch.id,
+        raw_item_id: recipe.component_item_id,
+        planned_qty: plannedQty,
+        actual_qty: consumedQty
+      });
+      await queueOfflineWrite('production_consumptions', 'insert', consumption.id, consumption);
+
+      const consumptionMovement = await this.stockMovementRepository.create({
+        item_id: recipe.component_item_id,
+        warehouse_id: batch.warehouse_id,
+        qty: -consumedQty,
+        movement_type: 'consumption',
+        batch_no: batch.batch_no,
+        reference_type: 'production_batches',
+        reference_id: batch.id
+      });
+      // See SalesService.createInvoice for why ref_table/ref_id/moved_at are
+      // bridged onto the synced payload here (real runtime schema, not what
+      // the StockMovement entity type declares).
+      await queueOfflineWrite('stock_movements', 'insert', consumptionMovement.id, {
+        ...consumptionMovement,
+        ref_table: 'production_batches',
+        ref_id: batch.id,
+        moved_at: consumptionMovement.created_at
+      });
+    }
+
+    // Production/receipt movement for the finished item, mirroring
+    // Manufacturing.tsx: positive qty for the actual produced amount.
+    const outputMovement = await this.stockMovementRepository.create({
+      item_id: batch.item_id,
+      warehouse_id: batch.warehouse_id,
+      qty: actualQty,
+      movement_type: 'production',
+      batch_no: batch.batch_no,
+      reference_type: 'production_batches',
+      reference_id: batch.id
+    });
+    await queueOfflineWrite('stock_movements', 'insert', outputMovement.id, {
+      ...outputMovement,
+      ref_table: 'production_batches',
+      ref_id: batch.id,
+      moved_at: outputMovement.created_at
+    });
+
     const updatedBatch = await this.productionBatchRepository.update(id, {
       status: 'completed',
       actual_qty: actualQty

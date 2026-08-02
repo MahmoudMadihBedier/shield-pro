@@ -7,6 +7,11 @@ import {
 import { InventoryService } from './inventory-service';
 import { DashboardService } from './dashboard-service';
 import { SettingsService } from './settings-service';
+import { SalesService } from './sales-service';
+import { PurchaseService } from './purchase-service';
+import { AccountingService } from './accounting-service';
+import { ManufacturingService } from './manufacturing-service';
+import { HRService } from './hr-service';
 
 // Singleton instances
 let instances: any = {};
@@ -33,43 +38,37 @@ export class ServiceFactory {
     return instances.settingsService;
   }
 
-  // Additional services can be added here as they are implemented
   static getSalesService(): ISalesService {
     if (!instances.salesService) {
-      // instances.salesService = new SalesService();
-      throw new Error('SalesService not yet implemented');
+      instances.salesService = new SalesService();
     }
     return instances.salesService;
   }
 
   static getPurchaseService(): IPurchaseService {
     if (!instances.purchaseService) {
-      // instances.purchaseService = new PurchaseService();
-      throw new Error('PurchaseService not yet implemented');
+      instances.purchaseService = new PurchaseService();
     }
     return instances.purchaseService;
   }
 
   static getAccountingService(): IAccountingService {
     if (!instances.accountingService) {
-      // instances.accountingService = new AccountingService();
-      throw new Error('AccountingService not yet implemented');
+      instances.accountingService = new AccountingService();
     }
     return instances.accountingService;
   }
 
   static getManufacturingService(): IManufacturingService {
     if (!instances.manufacturingService) {
-      // instances.manufacturingService = new ManufacturingService();
-      throw new Error('ManufacturingService not yet implemented');
+      instances.manufacturingService = new ManufacturingService();
     }
     return instances.manufacturingService;
   }
 
   static getHRService(): IHRService {
     if (!instances.hrService) {
-      // instances.hrService = new HRService();
-      throw new Error('HRService not yet implemented');
+      instances.hrService = new HRService();
     }
     return instances.hrService;
   }

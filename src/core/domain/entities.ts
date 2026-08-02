@@ -65,7 +65,9 @@ export interface StockMovement extends BaseEntity {
   item_id: string;
   warehouse_id: string;
   qty: number;
-  movement_type: 'receipt' | 'issue' | 'transfer' | 'adjustment' | 'consumption' | 'production';
+  // 'sale_out' / 'purchase_in' are the literal strings the real Sales.tsx /
+  // Purchases.tsx invoice-save flows already write to stock_movements.
+  movement_type: 'receipt' | 'issue' | 'transfer' | 'adjustment' | 'consumption' | 'production' | 'sale_out' | 'purchase_in';
   reference_id?: string;
   reference_type?: string;
   batch_no?: string;
@@ -85,11 +87,14 @@ export interface SalesInvoice extends BaseEntity {
   customer_id: string;
   warehouse_id: string;
   payment_method: 'cash' | 'credit' | 'bank';
-  status: 'draft' | 'posted' | 'cancelled';
+  // 'paid' / 'unpaid' / 'partially_paid' are the literal statuses the real
+  // Sales.tsx invoice-save / receipt-voucher flows actually write.
+  status: 'draft' | 'posted' | 'cancelled' | 'paid' | 'unpaid' | 'partially_paid';
   subtotal: number;
   discount: number;
   vat_amount: number;
   total: number;
+  date?: string;
   notes?: string;
 }
 
@@ -131,11 +136,15 @@ export interface PurchaseInvoice extends BaseEntity {
   invoice_no: string;
   supplier_id: string;
   warehouse_id: string;
-  status: 'draft' | 'posted' | 'cancelled';
+  payment_method?: 'cash' | 'credit' | 'bank';
+  // 'paid' / 'unpaid' / 'partially_paid' are the literal statuses the real
+  // Purchases.tsx invoice-save / payment-voucher flows actually write.
+  status: 'draft' | 'posted' | 'cancelled' | 'paid' | 'unpaid' | 'partially_paid';
   subtotal: number;
   discount: number;
   vat_amount: number;
   total: number;
+  date?: string;
   notes?: string;
 }
 
@@ -163,6 +172,9 @@ export interface AccountTransaction extends BaseEntity {
   credit: number;
   reference_id?: string;
   reference_type?: string;
+  // The real journal-entry code (postDoubleEntry, and every module's inline
+  // debit/credit pair before it) always stamps a business date on the row.
+  date?: string;
   notes?: string;
 }
 
@@ -171,6 +183,8 @@ export interface ReceiptVoucher extends BaseEntity {
   customer_id: string;
   account_id: string;
   amount: number;
+  date?: string;
+  invoice_id?: string | null;
   notes?: string;
 }
 
@@ -179,6 +193,8 @@ export interface PaymentVoucher extends BaseEntity {
   supplier_id: string;
   account_id: string;
   amount: number;
+  date?: string;
+  invoice_id?: string | null;
   notes?: string;
 }
 
