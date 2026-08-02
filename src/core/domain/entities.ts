@@ -202,7 +202,11 @@ export interface PaymentVoucher extends BaseEntity {
 export interface ItemRecipe extends BaseEntity {
   parent_item_id: string;
   component_item_id: string;
-  qty: number;
+  // The real field every write path (Manufacturing.tsx) uses is
+  // `quantity_or_percentage`, not `qty` — this previously declared `qty`,
+  // which meant reads always saw `undefined` at runtime (Dexie tables are
+  // untyped, so nothing caught the mismatch at the type level).
+  quantity_or_percentage: number;
   recipe_type: 'packaging' | 'production';
 }
 
