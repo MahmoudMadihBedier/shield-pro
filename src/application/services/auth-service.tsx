@@ -43,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Subscribe to supabase auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log('Auth state changed:', _event, session?.user?.email);
       if (session?.user) {
         setUser(session.user);
         localStorage.setItem('erp_user', JSON.stringify(session.user));
@@ -98,6 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async (userId: string, email: string, metaName?: string) => {
     try {
+      console.log('Refreshing profile for user:', userId, email);
       if (navigator.onLine) {
         // Fetch from Supabase
         let { data: prof, error } = await supabase
@@ -106,11 +108,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('id', userId)
           .single();
 
+        console.log('Profile query result:', prof, error);
+
         if (error || !prof) {
+          console.log('Profile not found, creating new profile...');
           // Check if any profiles exist in the system. If not, this is the first user -> make them Master Admin!
           const { count } = await supabase.from('users').select('*', { count: 'exact', head: true });
           const isFirst = count === 0;
           const masterRoleId = '88888888-8888-8888-8888-888888888888';
+
+          console.log('Is first user:', isFirst);
 
           const newProfile = {
             id: userId,
@@ -122,6 +129,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const { error: insErr } = await supabase.from('users').insert(newProfile);
           if (!insErr) {
             prof = { ...newProfile, roles: isFirst ? { id: masterRoleId, name: 'Master Admin' } : null };
+            console.log('Profile created successfully:', prof);
+          } else {
+            console.error('Failed to create user profile:', insErr);
+            throw new Error('فشل إنشاء ملف المستخدم: ' + insErr.message);
           }
         }
 
@@ -159,6 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             updated_at: prof.updated_at || new Date().toISOString()
           };
 
+          console.log('Setting full profile:', fullProfile);
           setProfile(fullProfile);
           setCurrentUserId(fullProfile.id);
           localStorage.setItem('erp_profile', JSON.stringify(fullProfile));
@@ -175,15 +187,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch (e) {
       console.error("Failed to load profile:", e);
+      throw e;
     }
   };
 
   const signIn = async (email: string, password: string) => {
     setLoading(true);
     try {
+      console.log('Attempting sign in for:', email);
       if (navigator.onLine) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        // Add retry logic for timeout errors
+        let lastError: any = null;
+        const maxRetries = 3;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            console.log(`Sign in attempt ${attempt}/${maxRetries}`);
+            
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            console.log('Sign in result:', data, error);
+            
+            if (error) {
+              console.error('Sign in error:', error);
+              // Provide more specific error messages
+              if (error.message.includes('Invalid login credentials')) {
+                throw new Error('البريد الإلكتروني أو كلمة المرور غير صحيحة');
+              } else if (error.message.includes('Email not confirmed')) {
+                throw new Error('يرجى تأكيد بريدك الإلكتروني أولاً عبر الرابط المرسل إليك');
+              } else {
+                throw new Error(error.message || 'فشل تسجيل الدخول');
+              }
+            }
+            
+            console.log('Sign in successful, session:', data.session);
+            // Session created successfully - the onAuthStateChange will handle profile loading
+            return;
+            
+          } catch (err: any) {
+            lastError = err;
+            console.error(`Attempt ${attempt} failed:`, err);
+            
+            // Check if this is a retryable error (timeout or network)
+            const isRetryable = err.message?.includes('timeout') || 
+                              err.message?.includes('504') || 
+                              err.message?.includes('network') ||
+                              err.name === 'AuthRetryableFetchError';
+            
+            if (!isRetryable || attempt === maxRetries) {
+              throw err;
+            }
+            
+            // Wait before retrying (exponential backoff)
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            console.log(`Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+        
+        throw lastError || new Error('فشل تسجيل الدخول بعد عدة محاولات');
+        
       } else {
         // Offline sign-in bypass if session exists
         const cachedUser = localStorage.getItem('erp_user');
@@ -209,17 +271,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
     try {
-      // The profile row (and first-user-becomes-Master-Admin check) is created
-      // by refreshProfile() once a real session exists (see onAuthStateChange
-      // above) — not here, since if email confirmation is required there is no
-      // authenticated session yet at this point, and an insert without one
-      // would be rejected once RLS is enforced. `name` rides along as auth
-      // user metadata so refreshProfile can use it once that session exists.
-      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
-      if (error) throw error;
-      // No session back means Supabase requires email confirmation before login;
-      // a session back means confirmation is off and the user is already signed in.
-      return !data.session;
+      console.log('Attempting sign up for:', email, name);
+
+      // No retry here: signUp is not idempotent (each call can create a new
+      // auth.users row and queue another confirmation email), so retrying on
+      // timeout compounds the problem instead of fixing it. Let the user
+      // resubmit explicitly if it fails.
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name },
+          emailRedirectTo: window.location.origin
+        }
+      });
+
+      console.log('Sign up result:', data, error);
+
+      if (error) {
+        console.error('Sign up error:', error);
+        if (error.name === 'AuthRetryableFetchError' || error.message?.includes('504')) {
+          throw new Error('خادم المصادقة يستجيب ببطء. يرجى المحاولة مرة أخرى بعد قليل.');
+        }
+        throw new Error(error.message || 'فشل إنشاء الحساب');
+      }
+
+      // If session exists, user is immediately signed in (email confirmation off)
+      if (data.session) {
+        console.log('Sign up successful with immediate session');
+        return false; // No confirmation needed
+      }
+
+      // If no session but user was created, email confirmation is required
+      if (data.user && !data.session) {
+        console.log('Sign up successful but email confirmation required');
+        return true; // Confirmation needed
+      }
+
+      // Unexpected state
+      console.error('Unexpected sign up state:', data);
+      throw new Error('فشل إنشاء الحساب، يرجى المحاولة مرة أخرى');
     } finally {
       setLoading(false);
     }
