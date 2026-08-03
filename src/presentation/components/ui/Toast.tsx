@@ -102,7 +102,7 @@ const ToastContainer: React.FC<{ toasts: Toast[]; onRemove: (id: string) => void
 };
 
 // Individual Toast Item Component (Single Responsibility)
-const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({ toast, onRemove }) => {
+const ToastItem = React.forwardRef<HTMLDivElement, { toast: Toast; onRemove: (id: string) => void }>(({ toast, onRemove }, ref) => {
   const getIcon = () => {
     switch (toast.type) {
       case 'success':
@@ -131,21 +131,24 @@ const ToastItem: React.FC<{ toast: Toast; onRemove: (id: string) => void }> = ({
 
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, x: -50, scale: 0.9 }}
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: -50, scale: 0.9 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className={`${getStyles()} pointer-events-auto border rounded-lg shadow-lg p-4 flex items-center gap-3 min-w-[300px] max-w-md`}
+      className={`${getStyles()} pointer-events-auto border rounded-lg shadow-lg p-4 flex items-start gap-3 min-w-[300px] max-w-lg`}
       dir="rtl"
     >
       {getIcon()}
-      <p className="flex-1 text-sm font-medium text-gray-800">{toast.message}</p>
+      <p className="flex-1 text-sm font-medium text-gray-800 whitespace-pre-line">{toast.message}</p>
       <button
         onClick={() => onRemove(toast.id)}
-        className="text-gray-400 hover:text-gray-600 transition-colors"
+        className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
       >
         <X className="h-4 w-4" />
       </button>
     </motion.div>
   );
-};
+});
+
+ToastItem.displayName = 'ToastItem';

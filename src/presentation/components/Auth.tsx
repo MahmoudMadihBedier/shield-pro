@@ -36,13 +36,17 @@ export const Auth: React.FC = () => {
     try {
       if (isSignUp) {
         const needsConfirmation = await signUp(email, password, name);
-        success(
-          needsConfirmation
-            ? 'تم إنشاء الحساب بنجاح! يرجى التحقق من بريدك الإلكتروني لتأكيد التسجيل، ثم تسجيل الدخول.'
-            : 'تم إنشاء الحساب بنجاح وتسجيل الدخول تلقائياً.'
-        );
+        
         if (needsConfirmation) {
+          success('تم إنشاء الحساب بنجاح! يرجى التحقق من بريدك الإلكتروني لتأكيد التسجيل، ثم تسجيل الدخول.');
           setIsSignUp(false);
+          setName('');
+          setEmail('');
+          setPassword('');
+          resetValidations();
+        } else {
+          success('تم إنشاء الحساب بنجاح وتسجيل الدخول تلقائياً!');
+          // Clear form but don't switch to login since we're already logged in
           setName('');
           setEmail('');
           setPassword('');
@@ -50,9 +54,18 @@ export const Auth: React.FC = () => {
         }
       } else {
         await signIn(email, password);
+        success('تم تسجيل الدخول بنجاح!');
       }
     } catch (err: any) {
-      error(err.message || 'فشلت العملية، يرجى المحاولة مرة أخرى.');
+      // Provide more specific error messages
+      let errorMessage = err.message || 'فشلت العملية، يرجى المحاولة مرة أخرى.';
+      
+      // Add guidance for Supabase-related issues
+      if (errorMessage.includes('504') || errorMessage.includes('timeout') || errorMessage.includes('المصادقة يستجيب ببطء')) {
+        errorMessage += '\n\nيمكنك:\n1. المحاولة مرة أخرى بعد دقيقة\n2. التحقق من حالة خدمة Supabase: https://status.supabase.com\n3. تعطيل تأكيد البريد الإلكتروني في إعدادات Supabase';
+      }
+      
+      error(errorMessage);
     } finally {
       setLoading(false);
     }

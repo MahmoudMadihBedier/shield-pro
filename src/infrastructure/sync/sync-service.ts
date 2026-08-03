@@ -24,6 +24,7 @@ export function setCurrentUserId(id: string | null) {
   // Pull the latest server state as soon as we know who's logged in, instead of
   // waiting for a manual Settings sync or for this user's own push to succeed.
   if (id && navigator.onLine) {
+    // Only sync if we have a valid authenticated user
     pullFromServer();
     triggerSync();
   }
@@ -216,6 +217,14 @@ let isPulling = false;
 // edit shouldn't disappear from the UI just because a periodic pull ran).
 export async function pullFromServer() {
   if (!navigator.onLine || isPulling) return;
+  
+  // Check if user is authenticated before trying to sync
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    addLog("لا توجد جلسة مصادقة، تم إلغاء المزامنة");
+    return;
+  }
+  
   isPulling = true;
   try {
   addLog("بدء جلب البيانات الحديثة من السيرفر...");
@@ -270,6 +279,13 @@ export async function pullFromServer() {
 export async function triggerSync() {
   if (isSyncing || !navigator.onLine) {
     updateSyncState({ status: navigator.onLine ? 'online' : 'offline' });
+    return;
+  }
+
+  // Check if user is authenticated before trying to sync
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    addLog("لا توجد جلسة مصادقة، تم إلغاء المزامنة");
     return;
   }
 
