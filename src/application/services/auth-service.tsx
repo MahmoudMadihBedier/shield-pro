@@ -17,7 +17,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signUp: (email: string, password: string, name: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   checkPermission: (module: string, action: 'view' | 'add' | 'edit' | 'delete') => boolean;
 }
@@ -215,8 +215,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // authenticated session yet at this point, and an insert without one
       // would be rejected once RLS is enforced. `name` rides along as auth
       // user metadata so refreshProfile can use it once that session exists.
-      const { error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
+      const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
       if (error) throw error;
+      // No session back means Supabase requires email confirmation before login;
+      // a session back means confirmation is off and the user is already signed in.
+      return !data.session;
     } finally {
       setLoading(false);
     }
