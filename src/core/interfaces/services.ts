@@ -13,7 +13,7 @@ import { PaginationParams, PaginatedResult, EntityFilter } from '../types';
 // Authentication Service
 export interface IAuthService {
   signIn(email: string, password: string): Promise<User>;
-  signUp(email: string, password: string, name: string): Promise<void>;
+  signUp(email: string, password: string, name: string): Promise<boolean>;
   signOut(): Promise<void>;
   getCurrentUser(): User | null;
   checkPermission(module: string, action: 'view' | 'add' | 'edit' | 'delete'): boolean;
