@@ -35,13 +35,19 @@ export const Auth: React.FC = () => {
 
     try {
       if (isSignUp) {
-        await signUp(email, password, name);
-        success('تم إنشاء الحساب بنجاح! يرجى التحقق من بريدك الإلكتروني لتأكيد التسجيل، ثم تسجيل الدخول.');
-        setIsSignUp(false);
-        setName('');
-        setEmail('');
-        setPassword('');
-        resetValidations();
+        const needsConfirmation = await signUp(email, password, name);
+        success(
+          needsConfirmation
+            ? 'تم إنشاء الحساب بنجاح! يرجى التحقق من بريدك الإلكتروني لتأكيد التسجيل، ثم تسجيل الدخول.'
+            : 'تم إنشاء الحساب بنجاح وتسجيل الدخول تلقائياً.'
+        );
+        if (needsConfirmation) {
+          setIsSignUp(false);
+          setName('');
+          setEmail('');
+          setPassword('');
+          resetValidations();
+        }
       } else {
         await signIn(email, password);
       }
