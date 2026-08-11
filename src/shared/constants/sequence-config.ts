@@ -30,5 +30,6 @@ export const SYNC_TABLES = [
   'purchase_invoices', 'purchase_invoice_lines', 'purchase_returns',
   'purchase_return_lines', 'accounts', 'account_transactions',
   'receipt_vouchers', 'payment_vouchers', 'fixed_assets', 'expenses',
-  'employees', 'attendance', 'payroll_runs', 'audit_log', 'user_locations'
+  'employees', 'attendance', 'payroll_runs', 'tasks', 'employee_reports',
+  'bonuses', 'punishments', 'audit_log', 'user_locations'
 ];

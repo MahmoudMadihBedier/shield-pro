@@ -12,6 +12,7 @@ import { PurchaseService } from './purchase-service';
 import { AccountingService } from './accounting-service';
 import { ManufacturingService } from './manufacturing-service';
 import { HRService } from './hr-service';
+import { TaskService } from './task-service';
 
 // Singleton instances
 let instances: any = {};
@@ -71,6 +72,13 @@ export class ServiceFactory {
       instances.hrService = new HRService();
     }
     return instances.hrService;
+  }
+
+  static getTaskService(): TaskService {
+    if (!instances.taskService) {
+      instances.taskService = new TaskService();
+    }
+    return instances.taskService;
   }
 
   static getAuthService(): IAuthService {

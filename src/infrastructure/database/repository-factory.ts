@@ -6,7 +6,8 @@ import {
   IAccountRepository, IAccountTransactionRepository, IReceiptVoucherRepository, IPaymentVoucherRepository,
   IItemRecipeRepository, IProductionBatchRepository, IProductionConsumptionRepository,
   IEmployeeRepository, IAttendanceRepository, IPayrollRunRepository,
-  ISettingRepository, IAuditLogRepository, IUserLocationRepository
+  ISettingRepository, IAuditLogRepository, IUserLocationRepository,
+  ITaskRepository, IEmployeeReportRepository, IBonusRepository, IPunishmentRepository
 } from '../../core/interfaces/repository';
 
 import { BaseRepository } from './base-repository';
@@ -39,6 +40,10 @@ import { PayrollRunRepository } from './repositories/payroll-run-repository';
 import { SettingRepository } from './repositories/setting-repository';
 import { AuditLogRepository } from './repositories/audit-log-repository';
 import { UserLocationRepository } from './repositories/user-location-repository';
+import { TaskRepository } from './repositories/task-repository';
+import { EmployeeReportRepository } from './repositories/employee-report-repository';
+import { BonusRepository } from './repositories/bonus-repository';
+import { PunishmentRepository } from './repositories/punishment-repository';
 import { IRepository } from '../../core/interfaces/repository';
 import { BaseEntity } from '../../core/domain/entities';
 
@@ -261,6 +266,34 @@ export class RepositoryFactory {
       instances.userLocationRepository = new UserLocationRepository();
     }
     return instances.userLocationRepository;
+  }
+
+  static getTaskRepository(): ITaskRepository {
+    if (!instances.taskRepository) {
+      instances.taskRepository = new TaskRepository();
+    }
+    return instances.taskRepository;
+  }
+
+  static getEmployeeReportRepository(): IEmployeeReportRepository {
+    if (!instances.employeeReportRepository) {
+      instances.employeeReportRepository = new EmployeeReportRepository();
+    }
+    return instances.employeeReportRepository;
+  }
+
+  static getBonusRepository(): IBonusRepository {
+    if (!instances.bonusRepository) {
+      instances.bonusRepository = new BonusRepository();
+    }
+    return instances.bonusRepository;
+  }
+
+  static getPunishmentRepository(): IPunishmentRepository {
+    if (!instances.punishmentRepository) {
+      instances.punishmentRepository = new PunishmentRepository();
+    }
+    return instances.punishmentRepository;
   }
 
   // Reset all instances (useful for testing)

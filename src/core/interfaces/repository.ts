@@ -10,7 +10,8 @@ import {
   Account, AccountTransaction, ReceiptVoucher, PaymentVoucher,
   ItemRecipe, ProductionBatch, ProductionConsumption,
   Employee, Attendance, PayrollRun,
-  Setting, AuditLog, UserLocation
+  Setting, AuditLog, UserLocation,
+  Task, EmployeeReport, Bonus, Punishment
 } from '../domain/entities';
 
 // Base Repository Interface
@@ -156,4 +157,23 @@ export interface IAuditLogRepository extends IRepository<AuditLog> {
 export interface IUserLocationRepository extends IRepository<UserLocation> {
   findByUserId(userId: string): Promise<UserLocation[]>;
   findByDateRange(startDate: string, endDate: string): Promise<UserLocation[]>;
+}
+
+export interface ITaskRepository extends IRepository<Task> {
+  findByEmployeeId(employeeId: string): Promise<Task[]>;
+  findByStatus(status: string): Promise<Task[]>;
+}
+
+export interface IEmployeeReportRepository extends IRepository<EmployeeReport> {
+  findByReporterId(reporterId: string): Promise<EmployeeReport[]>;
+  findByReportedEmployeeId(reportedEmployeeId: string): Promise<EmployeeReport[]>;
+  findByStatus(status: string): Promise<EmployeeReport[]>;
+}
+
+export interface IBonusRepository extends IRepository<Bonus> {
+  findByEmployeeId(employeeId: string): Promise<Bonus[]>;
+}
+
+export interface IPunishmentRepository extends IRepository<Punishment> {
+  findByEmployeeId(employeeId: string): Promise<Punishment[]>;
 }
