@@ -15,6 +15,12 @@ alter table public.employees
 create unique index if not exists employees_user_id_unique_idx
   on public.employees(user_id) where user_id is not null;
 
+-- The task page needs the signed-in employee's own profile to determine which
+-- assignments belong to them. This does not reveal other employee records.
+drop policy if exists employees_select_own on public.employees;
+create policy employees_select_own on public.employees for select to authenticated
+  using (user_id = auth.uid());
+
 -- Tasks table
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
