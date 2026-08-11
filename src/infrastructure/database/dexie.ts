@@ -46,6 +46,10 @@ class ERPDatabase extends Dexie {
   payroll_runs!: Table<any, string>;
   audit_log!: Table<any, string>;
   user_locations!: Table<any, string>;
+  tasks!: Table<any, string>;
+  employee_reports!: Table<any, string>;
+  bonuses!: Table<any, string>;
+  punishments!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -95,6 +99,14 @@ class ERPDatabase extends Dexie {
     // v3: GPS location pings for rep/user tracking (foreground-only)
     this.version(3).stores({
       user_locations: 'id, user_id, recorded_at'
+    });
+
+    // v4: Task management system (tasks, employee_reports, bonuses, punishments)
+    this.version(4).stores({
+      tasks: 'id, employee_id, status, due_date',
+      employee_reports: 'id, reporter_id, reported_employee_id, status',
+      bonuses: 'id, employee_id, date',
+      punishments: 'id, employee_id, date'
     });
   }
 }

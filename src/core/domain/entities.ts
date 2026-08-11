@@ -237,6 +237,9 @@ export interface ProductionConsumption extends BaseEntity {
 // HR Entities
 export interface Employee extends BaseEntity {
   name: string;
+  // The system account that owns this employee profile. This is optional while
+  // existing records are being linked by an administrator.
+  user_id?: string | null;
   role?: string;
   base_salary: number;
   allowances: number;
@@ -285,4 +288,43 @@ export interface UserLocation extends BaseEntity {
   lng: number;
   accuracy?: number;
   recorded_at: string;
+}
+
+// Task Management Entities
+export interface Task extends BaseEntity {
+  employee_id: string;
+  title: string;
+  description?: string;
+  status: 'not_started' | 'in_progress' | 'done' | 'cancelled';
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  due_date?: string;
+  feedback?: string;
+  created_by?: string;
+}
+
+export interface EmployeeReport extends BaseEntity {
+  reporter_id: string;
+  reported_employee_id: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'under_review' | 'resolved' | 'dismissed';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  resolution_notes?: string;
+}
+
+export interface Bonus extends BaseEntity {
+  employee_id: string;
+  amount: number;
+  reason?: string;
+  given_by?: string;
+  date: string;
+}
+
+export interface Punishment extends BaseEntity {
+  employee_id: string;
+  amount: number;
+  reason: string;
+  given_by?: string;
+  date: string;
 }

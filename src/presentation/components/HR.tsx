@@ -4,11 +4,15 @@ import { getErrorMessage } from '../../shared/utils/errors';
 import { useEmployees, useAttendance, usePayrollRuns } from '../../application/hooks/use-hr';
 import { PaginationParams } from '../../core/types';
 import { useToast } from './ui/Toast';
+import { Tasks } from './Tasks';
+import { db } from '../../infrastructure/database/dexie';
+import { User } from '../../core/domain/entities';
 import {
   Users,
   Clock,
   Briefcase,
-  CheckCircle
+  CheckCircle,
+  FileText
 } from 'lucide-react';
 
 // Stable reference (not recreated per render) so the data hooks below don't
@@ -20,11 +24,12 @@ export const HR: React.FC = () => {
   const { success, error, warning } = useToast();
 
   // Tabs
-  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'attendance' | 'payroll'>('employees');
+  const [activeSubTab, setActiveSubTab] = useState<'employees' | 'attendance' | 'payroll' | 'tasks'>('employees');
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
-  const { employees: employeesResult, createEmployee } = useEmployees(undefined, UNPAGINATED);
+  const { employees: employeesResult, createEmployee, updateEmployee } = useEmployees(undefined, UNPAGINATED);
   const employees = employeesResult.data;
+  const [systemUsers, setSystemUsers] = useState<User[]>([]);
 
   const { attendance: attendanceResult, recordAttendance } = useAttendance(undefined, UNPAGINATED);
   const attendance = attendanceResult.data;
@@ -39,6 +44,11 @@ export const HR: React.FC = () => {
   const [empSalary, setEmpSalary] = useState('2500');
   const [empAllowances, setEmpAllowances] = useState('0');
   const [empDeductions, setEmpDeductions] = useState('0');
+  const [empUserId, setEmpUserId] = useState('');
+
+  useEffect(() => {
+    db.users.toArray().then((users) => setSystemUsers(users as User[]));
+  }, []);
 
   // 2. Attendance State
   const [attEmployee, setAttEmployee] = useState('');
@@ -71,6 +81,7 @@ export const HR: React.FC = () => {
         base_salary: Number(empSalary),
         allowances: Number(empAllowances) || 0,
         deductions: Number(empDeductions) || 0,
+        user_id: empUserId || null,
         join_date: new Date().toISOString().split('T')[0]
       });
 
@@ -78,9 +89,19 @@ export const HR: React.FC = () => {
       setEmpSalary('2500');
       setEmpAllowances('0');
       setEmpDeductions('0');
+      setEmpUserId('');
       success('تم تسجيل الموظف الجديد في الموارد البشرية بنجاح!');
     } catch (e) {
       error(getErrorMessage(e, 'فشل تسجيل الموظف'));
+    }
+  };
+
+  const handleEmployeeAccountLink = async (employeeId: string, userId: string) => {
+    try {
+      await updateEmployee(employeeId, { user_id: userId || null });
+      success('تم ربط حساب النظام بملف الموظف.');
+    } catch (err) {
+      error(getErrorMessage(err, 'فشل ربط حساب الموظف'));
     }
   };
 
@@ -179,6 +200,15 @@ export const HR: React.FC = () => {
           <Briefcase className="h-4 w-4" />
           <span>مسيرات رواتب الموظفين الشهرية</span>
         </button>
+        <button
+          onClick={() => setActiveSubTab('tasks')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeSubTab === 'tasks' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <FileText className="h-4 w-4" />
+          <span>إدارة المهام والشكاوى</span>
+        </button>
       </div>
 
       {activeSubTab === 'employees' && (
@@ -245,6 +275,20 @@ export const HR: React.FC = () => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">حساب النظام المرتبط (اختياري)</label>
+                <select
+                  value={empUserId}
+                  onChange={(e) => setEmpUserId(e.target.value)}
+                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
+                >
+                  <option value="">يربط لاحقاً</option>
+                  {systemUsers.map((systemUser) => (
+                    <option key={systemUser.id} value={systemUser.id}>{systemUser.name} ({systemUser.email})</option>
+                  ))}
+                </select>
+              </div>
+
               <button
                 type="submit"
                 className="w-full flex justify-center py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition"
@@ -264,6 +308,7 @@ export const HR: React.FC = () => {
                     <th className="py-3 px-4">اسم الموظف</th>
                     <th className="py-3 px-4">المسمى الوظيفي</th>
                     <th className="py-3 px-4 text-center">الراتب الشهري</th>
+                    <th className="py-3 px-4">حساب النظام</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
@@ -273,6 +318,18 @@ export const HR: React.FC = () => {
                       <td className="py-3 px-4 text-gray-600">{emp.role || '-'}</td>
                       <td className="py-3 px-4 text-center font-mono font-bold text-blue-600">
                         {formatCurrency(Number(emp.base_salary) || 0)}
+                      </td>
+                      <td className="py-3 px-4">
+                        <select
+                          value={emp.user_id || ''}
+                          onChange={(e) => handleEmployeeAccountLink(emp.id, e.target.value)}
+                          className="w-full rounded border border-gray-300 py-1.5 px-2 text-xs bg-white"
+                        >
+                          <option value="">غير مرتبط</option>
+                          {systemUsers.map((systemUser) => (
+                            <option key={systemUser.id} value={systemUser.id}>{systemUser.name}</option>
+                          ))}
+                        </select>
                       </td>
                     </tr>
                   ))}
@@ -451,6 +508,10 @@ export const HR: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {activeSubTab === 'tasks' && (
+        <Tasks />
       )}
     </div>
   );

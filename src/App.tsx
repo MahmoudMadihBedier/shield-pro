@@ -25,7 +25,8 @@ import {
   RefreshCw,
   Bell,
   Smartphone,
-  MapPin
+  MapPin,
+  FileText
 } from 'lucide-react';
 
 const Settings = lazy(() => import('./presentation/components/Settings').then(m => ({ default: m.Settings })));
@@ -35,6 +36,7 @@ const Sales = lazy(() => import('./presentation/components/Sales').then(m => ({ 
 const Purchases = lazy(() => import('./presentation/components/Purchases').then(m => ({ default: m.Purchases })));
 const Accounting = lazy(() => import('./presentation/components/Accounting').then(m => ({ default: m.Accounting })));
 const HR = lazy(() => import('./presentation/components/HR').then(m => ({ default: m.HR })));
+const Tasks = lazy(() => import('./presentation/components/Tasks').then(m => ({ default: m.Tasks })));
 const Reports = lazy(() => import('./presentation/components/Reports').then(m => ({ default: m.Reports })));
 const UsersDevices = lazy(() => import('./presentation/components/UsersDevices').then(m => ({ default: m.UsersDevices })));
 const RepTracking = lazy(() => import('./presentation/components/RepTracking').then(m => ({ default: m.RepTracking })));
@@ -138,6 +140,18 @@ function ERPAppContent() {
           >
             <LayoutDashboard className="h-5 w-5" />
             <span>لوحة التحكم والمؤشرات</span>
+          </motion.button>
+
+          <motion.button
+            onClick={() => setActiveTab('tasks')}
+            whileHover={{ scale: 1.02, x: 4 }}
+            whileTap={{ scale: 0.98 }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+              activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <FileText className="h-5 w-5" />
+            <span>مهامي والبلاغات</span>
           </motion.button>
 
           {checkPermission('sales', 'view') && (
@@ -362,6 +376,17 @@ function ERPAppContent() {
                   transition={{ duration: 0.2 }}
                 >
                   <Dashboard />
+                </motion.div>
+              )}
+              {activeTab === 'tasks' && (
+                <motion.div
+                  key="tasks"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <Tasks />
                 </motion.div>
               )}
               {activeTab === 'sales' && (
