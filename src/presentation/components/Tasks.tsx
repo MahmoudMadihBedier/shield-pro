@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
 import { useEmployees } from '../../application/hooks/use-hr';
-import { useTasks, useEmployeeReports, useBonuses, usePunishments } from '../../application/hooks/use-tasks';
+import { useTasks, useEmployeeReports, useBonuses, usePunishments, useTaskEmployeeDirectory } from '../../application/hooks/use-tasks';
 import { PaginationParams } from '../../core/types';
 import { useToast } from './ui/Toast';
 import { useAuth } from '../../application/services/auth-service';
@@ -24,13 +24,14 @@ export const Tasks: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'tasks' | 'bonuses' | 'punishments' | 'reports'>('tasks');
 
   // Data
-  const { employees: employeesResult } = useEmployees(undefined, UNPAGINATED);
-  const employees = employeesResult.data;
+  const { employees: employeeProfilesResult } = useEmployees(undefined, UNPAGINATED);
+  const employeeProfiles = employeeProfilesResult.data;
+  const { employees } = useTaskEmployeeDirectory();
 
   // An employee may only work on tasks assigned to their own employee record.
   // Old profiles without a link get a one-time name fallback so existing data
   // remains usable while the administrator links accounts to employee records.
-  const matchingEmployees = employees.filter((employee) =>
+  const matchingEmployees = employeeProfiles.filter((employee) =>
     employee.user_id === user?.id || (!employee.user_id && employee.name.trim() === profile?.name?.trim())
   );
   const currentEmployee = matchingEmployees.length === 1 ? matchingEmployees[0] : undefined;
@@ -84,7 +85,7 @@ export const Tasks: React.FC = () => {
       setPunishmentEmployee(employees[0].id);
       setReportEmployee(employees.find((employee) => employee.id !== currentEmployee?.id)?.id || '');
     }
-  }, [employees]);
+  }, [employees, currentEmployee?.id]);
 
   // Helper functions
   const getEmployeeName = (employeeId: string) => {
