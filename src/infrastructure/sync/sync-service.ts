@@ -18,6 +18,12 @@ let syncState: SyncState = {
 
 let currentUserId: string | null = null;
 
+// Audit entries are system bookkeeping, not a separate action the employee
+// performed. Keep them syncing, but don't count them in the user-facing badge.
+async function getVisiblePendingCount() {
+  return db.offline_queue.where('table_name').notEqual('audit_log').count();
+}
+
 // Called by authContext on sign-in/sign-out so writes can be attributed in the audit log
 export function setCurrentUserId(id: string | null) {
   currentUserId = id;
@@ -129,7 +135,7 @@ export async function queueOfflineWrite(
       timestamp: Date.now()
     });
 
-    const pending = await db.offline_queue.count();
+    const pending = await getVisiblePendingCount();
     updateSyncState({ pendingCount: pending });
     addLog(`تم حفظ العملية محلياً في جدول ${tableName}`);
 
@@ -314,7 +320,7 @@ export async function triggerSync() {
         failureCount++;
         addLog(`خطأ أثناء مزامنة ${item.table_name} (سيعاد المحاولة لاحقاً): ${err.message}`);
       }
-      const remaining = await db.offline_queue.count();
+      const remaining = await getVisiblePendingCount();
       updateSyncState({ pendingCount: remaining });
     }
 

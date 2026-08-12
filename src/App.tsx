@@ -5,6 +5,7 @@ import { Auth } from './presentation/components/Auth';
 import { PendingApproval } from './presentation/components/PendingApproval';
 import { ToastProvider } from './presentation/components/ui/Toast';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
+import { db, type OfflineQueueItem } from './infrastructure/database/dexie';
 import { useLocationTracking } from './application/hooks/use-location-tracking';
 import {
   ShieldAlert,
@@ -58,6 +59,41 @@ function ERPAppContent() {
 
   // Sync state
   const [syncState, setSyncState] = useState<any>(null);
+  const [showPendingOperations, setShowPendingOperations] = useState(false);
+  const [pendingOperations, setPendingOperations] = useState<OfflineQueueItem[]>([]);
+
+  const describePendingOperation = (operation: OfflineQueueItem) => {
+    const data = operation.data || {};
+    const action = operation.action === 'insert' ? 'إضافة' : operation.action === 'update' ? 'تحديث' : 'حذف';
+    const names: Record<string, string> = {
+      tasks: data.title ? `مهمة: ${data.title}` : 'مهمة',
+      employee_reports: 'بلاغ موظف',
+      bonuses: 'مكافأة موظف',
+      punishments: 'خصم أو عقوبة موظف',
+      sales_invoices: data.invoice_no ? `فاتورة مبيعات ${data.invoice_no}` : 'فاتورة مبيعات',
+      purchase_invoices: data.invoice_no ? `فاتورة مشتريات ${data.invoice_no}` : 'فاتورة مشتريات',
+      customers: data.name ? `عميل: ${data.name}` : 'عميل',
+      suppliers: data.name ? `مورد: ${data.name}` : 'مورد',
+      items: data.name ? `صنف: ${data.name}` : 'صنف مخزون',
+      employees: data.name ? `ملف موظف: ${data.name}` : 'ملف موظف',
+      attendance: 'تسجيل حضور وانصراف',
+      payroll_runs: 'مسير رواتب',
+      receipt_vouchers: 'إيصال قبض',
+      payment_vouchers: 'إيصال صرف',
+      stock_movements: 'حركة مخزون',
+      production_batches: data.batch_no ? `أمر إنتاج ${data.batch_no}` : 'أمر إنتاج'
+    };
+    return `${action} ${names[operation.table_name] || 'بيانات في النظام'}`;
+  };
+
+  const openPendingOperations = async () => {
+    const operations = await db.offline_queue
+      .where('table_name')
+      .notEqual('audit_log')
+      .sortBy('timestamp');
+    setPendingOperations(operations);
+    setShowPendingOperations(true);
+  };
 
   useEffect(() => {
     if (user) {
@@ -333,10 +369,15 @@ function ERPAppContent() {
           <div className="flex items-center gap-4">
             {/* Sync Queue Pending Indicator */}
             {syncState?.pendingCount > 0 && (
-              <span className="animate-pulse inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200">
+              <button
+                type="button"
+                onClick={openPendingOperations}
+                className="animate-pulse inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-200 hover:bg-yellow-200 transition"
+                title="عرض العمليات بانتظار الرفع"
+              >
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                 <span>{syncState.pendingCount} عملية بانتظار الرفع</span>
-              </span>
+              </button>
             )}
 
             {/* Connectivity Status Badge */}
@@ -362,6 +403,31 @@ function ERPAppContent() {
             </div>
           </div>
         </header>
+
+        {showPendingOperations && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 p-4" onClick={() => setShowPendingOperations(false)}>
+            <div className="w-full max-w-md rounded-xl bg-white shadow-xl" onClick={(event) => event.stopPropagation()}>
+              <div className="flex items-center justify-between border-b px-5 py-4">
+                <div>
+                  <h2 className="font-bold text-gray-900">عمليات بانتظار الرفع</h2>
+                  <p className="mt-1 text-xs text-gray-500">سيتم حفظ هذه العمليات تلقائياً عند عودة الاتصال.</p>
+                </div>
+                <button type="button" onClick={() => setShowPendingOperations(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="إغلاق">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="max-h-80 space-y-2 overflow-y-auto p-5">
+                {pendingOperations.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-gray-500">لا توجد عمليات معلقة الآن.</p>
+                ) : pendingOperations.map((operation) => (
+                  <div key={operation.id} className="rounded-lg border border-yellow-100 bg-yellow-50 px-3 py-2 text-sm font-medium text-gray-700">
+                    {describePendingOperation(operation)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modules Body */}
         <main className="flex-1 bg-gray-50 overflow-y-auto">
