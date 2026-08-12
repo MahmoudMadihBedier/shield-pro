@@ -97,6 +97,16 @@ create table if not exists public.punishments (
 create index if not exists punishments_employee_id_idx on public.punishments(employee_id);
 create index if not exists punishments_date_idx on public.punishments(date);
 
+-- The offline repository adds updated_at to every entity. Keep all task
+-- management tables consistent with that shared entity contract so queued
+-- bonuses, deductions, and reports are accepted by PostgREST.
+alter table public.employee_reports
+  add column if not exists updated_at timestamptz not null default now();
+alter table public.bonuses
+  add column if not exists updated_at timestamptz not null default now();
+alter table public.punishments
+  add column if not exists updated_at timestamptz not null default now();
+
 -- Access helpers --------------------------------------------------------------
 create or replace function public.is_task_admin()
 returns boolean
