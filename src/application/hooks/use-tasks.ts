@@ -2,6 +2,43 @@ import { useState, useEffect, useCallback } from 'react';
 import { Task, EmployeeReport, Bonus, Punishment } from '../../core/domain/entities';
 import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/types';
 import { ServiceFactory } from '../services/service-factory';
+import { supabase } from '../../infrastructure/api/supabase';
+
+export interface TaskEmployeeDirectoryEntry {
+  id: string;
+  name: string;
+  role?: string;
+  user_id?: string | null;
+}
+
+export function useTaskEmployeeDirectory() {
+  const [employees, setEmployees] = useState<TaskEmployeeDirectoryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadEmployees = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: requestError } = await supabase
+        .from('task_employee_directory')
+        .select('id, name, role, user_id')
+        .order('name');
+      if (requestError) throw requestError;
+      setEmployees((data || []) as TaskEmployeeDirectoryEntry[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load employee directory');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEmployees();
+  }, [loadEmployees]);
+
+  return { employees, loading, error, loadEmployees };
+}
 
 export function useTasks(filter?: EntityFilter, params?: PaginationParams) {
   const [tasks, setTasks] = useState<PaginatedResult<Task>>({ data: [], total: 0, page: 1, limit: 50, totalPages: 0 });

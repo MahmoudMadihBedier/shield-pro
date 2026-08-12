@@ -21,6 +21,17 @@ drop policy if exists employees_select_own on public.employees;
 create policy employees_select_own on public.employees for select to authenticated
   using (user_id = auth.uid());
 
+-- A limited staff directory is needed for assigning tasks and selecting a
+-- colleague in an escalation. It intentionally omits salary and HR fields.
+-- The view runs as its owner so it can expose this safe subset without giving
+-- ordinary employees broad read access to public.employees.
+create or replace view public.task_employee_directory
+with (security_invoker = false)
+as
+  select id, name, role, user_id
+  from public.employees;
+grant select on public.task_employee_directory to authenticated;
+
 -- Tasks table
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
