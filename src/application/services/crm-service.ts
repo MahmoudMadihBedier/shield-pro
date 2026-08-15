@@ -39,7 +39,7 @@ export class CRMService {
       if (!roleData) throw new Error('Client portal role not found');
 
       // Create customer record
-      const { data: customerData, error: customerError } = await supabase
+      const { data: createdCustomer, error: customerError } = await supabase
         .from('customers')
         .insert({
           name: customerData.name,
@@ -66,7 +66,7 @@ export class CRMService {
 
       return {
         success: true,
-        customer: customerData,
+        customer: createdCustomer,
         tempPassword: authData.user?.user_metadata?.password
       };
     } catch (error) {
