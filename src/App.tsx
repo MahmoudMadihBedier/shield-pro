@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './application/services/auth-service';
 import { Auth } from './presentation/components/Auth';
 import { PendingApproval } from './presentation/components/PendingApproval';
+import { CRMClientPortal } from './presentation/components/CRMClientPortal';
 import { ToastProvider } from './presentation/components/ui/Toast';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
 import { db, type OfflineQueueItem } from './infrastructure/database/dexie';
@@ -123,6 +124,11 @@ function ERPAppContent() {
   // so show a clear pending-review state instead of an empty app shell.
   if (profile && !profile.role_id && profile.role_name !== 'Master Admin') {
     return <PendingApproval profile={profile} onSignOut={handleLogout} />;
+  }
+
+  // If this is a client portal user, show the CRM Client Portal instead of ERP
+  if (profile?.is_client_user) {
+    return <CRMClientPortal />;
   }
 
   return (
