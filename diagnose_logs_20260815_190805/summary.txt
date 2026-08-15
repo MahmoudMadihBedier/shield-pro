@@ -1,0 +1,2 @@
+repo: /Users/mac/development/other-projects/shield-pro
+feature/setup-supabase-vercel
