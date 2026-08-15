@@ -16,11 +16,6 @@ import {
   XCircle,
   AlertCircle,
   Plus,
-  Search,
-  Filter,
-  ChevronDown,
-  ChevronUp,
-  Eye,
   Download,
   LogOut
 } from 'lucide-react';
