@@ -5,7 +5,7 @@ import { supabase } from '../../infrastructure/api/supabase';
  */
 export class CRMService {
   /**
-   * Create a new client user account
+   * Create a new client user account for existing customer
    */
   static async createClientUser(customerData: {
     name: string;
@@ -17,12 +17,15 @@ export class CRMService {
     website?: string;
   }) {
     try {
+      // Generate a random password
+      const tempPassword = Math.random().toString(36).slice(-8);
+      
       // First create the auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: customerData.email,
-        password: Math.random().toString(36).slice(-8), // Generate random password
+        password: tempPassword,
         options: {
-          data: { name: customerData.name }
+          data: { name: customerData.name, password: tempPassword }
         }
       });
 
@@ -38,39 +41,62 @@ export class CRMService {
 
       if (!roleData) throw new Error('Client portal role not found');
 
-      // Create customer record
-      const { data: createdCustomer, error: customerError } = await supabase
-        .from('customers')
-        .insert({
-          name: customerData.name,
-          email: customerData.email,
-          phone: customerData.phone,
-          address: customerData.address,
-          company_name: customerData.company_name,
-          tax_id: customerData.tax_id,
-          website: customerData.website,
-          user_id: authData.user.id,
-          is_active: true,
-          credit_status: 'good'
-        })
-        .select()
-        .single();
-
-      if (customerError) throw customerError;
-
-      // Update user with client portal role
-      await supabase
-        .from('users')
-        .update({ role_id: roleData.id })
-        .eq('id', authData.user.id);
+      // Insert into public.users table if it doesn't exist
+      try {
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            email: customerData.email,
+            name: customerData.name,
+            role_id: roleData.id
+          });
+        
+        if (insertError && insertError.code !== '23505') { // Ignore duplicate key error
+          console.warn('Could not insert user, trying update instead:', insertError);
+          // Try update if insert failed
+          await supabase
+            .from('users')
+            .update({ role_id: roleData.id, name: customerData.name })
+            .eq('id', authData.user.id);
+        }
+      } catch (userError) {
+        console.warn('Could not create/update public.users record:', userError);
+      }
 
       return {
         success: true,
-        customer: createdCustomer,
-        tempPassword: authData.user?.user_metadata?.password
+        user_id: authData.user.id,
+        tempPassword
       };
     } catch (error) {
       console.error('Error creating client user:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  }
+
+  /**
+   * Link CRM user to existing customer
+   */
+  static async linkCrmUserToCustomer(customerId: string, userId: string) {
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ 
+          user_id: userId,
+          is_active: true,
+          credit_status: 'good'
+        })
+        .eq('id', customerId);
+
+      if (error) throw error;
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error linking CRM user to customer:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
