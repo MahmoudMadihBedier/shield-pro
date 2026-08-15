@@ -10,6 +10,7 @@ const PRESENCE_HEARTBEAT_MS = 5 * 60 * 1000;
 export interface UserProfile extends User {
   role_name?: string;
   permissions?: { [key: string]: { view: boolean; add: boolean; edit: boolean; delete: boolean } };
+  is_client_user?: boolean;
 }
 
 interface AuthContextType {
@@ -18,6 +19,8 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<boolean>;
+  signInClient: (clientId: string, email: string, password: string) => Promise<void>;
+  registerClient: (clientId: string, email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   checkPermission: (module: string, action: 'view' | 'add' | 'edit' | 'delete') => boolean;
 }
@@ -137,11 +140,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         if (prof) {
+          // Check if this is a client portal user
+          const isClientUser = prof.roles?.name === 'client_portal';
+          
           // Fetch custom permissions if not Master Admin
           const isMaster = prof.roles?.name === 'Master Admin';
           const permissionsObj: any = {};
 
-          if (!isMaster && prof.role_id) {
+          if (!isMaster && prof.role_id && !isClientUser) {
             const { data: perms } = await supabase
               .from('role_permissions')
               .select('permissions(module, action)')
@@ -166,6 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role_id: prof.role_id,
             role_name: prof.roles?.name || 'مستخدم',
             permissions: permissionsObj,
+            is_client_user: isClientUser,
             created_at: prof.created_at || new Date().toISOString(),
             updated_at: prof.updated_at || new Date().toISOString()
           };
@@ -333,8 +340,116 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return !!profile.permissions?.[module]?.[action];
   };
 
+  const signInClient = async (clientId: string, email: string, password: string) => {
+    setLoading(true);
+    try {
+      // First authenticate with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+
+      // Verify this is a client user with the correct client_id
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('*, users(*)')
+        .eq('client_id', clientId)
+        .eq('user_id', data.user.id)
+        .single();
+
+      if (customerError || !customerData) {
+        await supabase.auth.signOut();
+        throw new Error('معرف العميل غير صحيح أو غير مرتبط بهذا الحساب');
+      }
+
+      // Check if the user has client_portal role
+      if (customerData.users?.role_name !== 'client_portal') {
+        await supabase.auth.signOut();
+        throw new Error('هذا الحساب ليس حساب عميل');
+      }
+
+      // The profile will be loaded by the onAuthStateChange handler
+    } catch (err: any) {
+      await supabase.auth.signOut();
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const registerClient = async (clientId: string, email: string, password: string, name: string) => {
+    setLoading(true);
+    try {
+      // Verify the client_id exists and is active
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('is_active', true)
+        .single();
+
+      if (customerError || !customerData) {
+        return { success: false, error: 'معرف العميل غير صحيح أو غير نشط' };
+      }
+
+      // Check if customer already has a user account
+      if (customerData.user_id) {
+        return { success: false, error: 'هذا العميل لديه حساب بالفعل' };
+      }
+
+      // Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name }
+        }
+      });
+
+      if (authError) throw authError;
+      if (!authData.user) throw new Error('فشل إنشاء حساب المصادقة');
+
+      // Get client portal role
+      const { data: roleData } = await supabase
+        .from('roles')
+        .select('id')
+        .eq('name', 'client_portal')
+        .single();
+
+      if (!roleData) throw new Error('دور العميل غير موجود');
+
+      // Update customer with user_id
+      const { error: updateError } = await supabase
+        .from('customers')
+        .update({ 
+          user_id: authData.user.id,
+          email: email,
+          name: name || customerData.name
+        })
+        .eq('id', customerData.id);
+
+      if (updateError) throw updateError;
+
+      // Create user profile with client_portal role
+      const { error: userError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          email: email,
+          name: name || customerData.name,
+          role_id: roleData.id
+        });
+
+      if (userError) throw userError;
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'فشل تسجيل العميل' };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signOut, checkPermission }}>
+    <AuthContext.Provider value={{ user, profile, loading, signIn, signUp, signInClient, registerClient, signOut, checkPermission }}>
       {children}
     </AuthContext.Provider>
   );

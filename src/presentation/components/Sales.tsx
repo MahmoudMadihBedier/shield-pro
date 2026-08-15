@@ -21,7 +21,10 @@ import {
   FileText,
   Receipt,
   TrendingUp,
-  Boxes
+  Boxes,
+  Share2,
+  Copy,
+  Check
 } from 'lucide-react';
 
 // Stable references (not recreated per render) so the data hooks below don't
@@ -35,6 +38,9 @@ export const Sales: React.FC = () => {
 
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
+  
+  // Client ID sharing state
+  const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
   const { customers: customersResult, createCustomer } = useCustomers();
@@ -139,20 +145,42 @@ export const Sales: React.FC = () => {
     }
 
     try {
-      await createCustomer({
+      const result = await createCustomer({
         name: custName.trim(),
         phone: custPhone.trim() || undefined,
         address: custAddress.trim() || undefined,
         opening_balance: Number(custOpening)
       });
+      
       setCustName('');
       setCustPhone('');
       setCustAddress('');
       setCustOpening('0');
-      success('تم تسجيل العميل بنجاح!');
+      
+      // Show the client ID if it was generated
+      if (result && result.client_id) {
+        success(`تم تسجيل العميل بنجاح! معرف العميل: ${result.client_id}`);
+      } else {
+        success('تم تسجيل العميل بنجاح!');
+      }
     } catch (e) {
       error(getErrorMessage(e, 'فشل تسجيل العميل'));
     }
+  };
+
+  // Copy client ID to clipboard
+  const copyClientId = (clientId: string) => {
+    navigator.clipboard.writeText(clientId);
+    setCopiedClientId(clientId);
+    setTimeout(() => setCopiedClientId(null), 2000);
+    success('تم نسخ معرف العميل');
+  };
+
+  // Share client ID on WhatsApp
+  const shareClientIdOnWhatsApp = (clientId: string, customerName: string) => {
+    const message = `مرحباً ${customerName}،\n\nمعرف العميل الخاص بك هو: ${clientId}\n\nاستخدم هذا المعرف لتسجيل الدخول إلى بوابة العملاء الخاصة بنا.\n\nيمكنك الدخول من خلال الرابط: ${window.location.origin}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   // Live Invoice Subtotals
@@ -475,9 +503,11 @@ export const Sales: React.FC = () => {
                 <thead className="bg-gray-50">
                   <tr className="text-xs font-bold text-gray-500">
                     <th className="py-3 px-4">الاسم</th>
+                    <th className="py-3 px-4">معرف العميل</th>
                     <th className="py-3 px-4">الهاتف</th>
                     <th className="py-3 px-4">العنوان</th>
                     <th className="py-3 px-4 text-center">الرصيد الجاري</th>
+                    <th className="py-3 px-4 text-center">إجراءات</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-sm">
@@ -490,6 +520,37 @@ export const Sales: React.FC = () => {
                       className="hover:bg-blue-50 transition-colors cursor-pointer"
                     >
                       <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
+                      <td className="py-3 px-4">
+                        {c.client_id ? (
+                          <div className="flex items-center gap-2">
+                            <code className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-mono">
+                              {c.client_id}
+                            </code>
+                            <div className="flex gap-1">
+                              <motion.button
+                                onClick={() => copyClientId(c.client_id!)}
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                className="text-gray-400 hover:text-gray-600 p-1"
+                                title="نسخ"
+                              >
+                                {copiedClientId === c.client_id ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                              </motion.button>
+                              <motion.button
+                                onClick={() => shareClientIdOnWhatsApp(c.client_id!, c.name)}
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                className="text-gray-400 hover:text-green-600 p-1"
+                                title="مشاركة على واتساب"
+                              >
+                                <Share2 className="h-3 w-3" />
+                              </motion.button>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400 text-xs">غير متوفر</span>
+                        )}
+                      </td>
                       <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
                       <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
                       <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
@@ -498,6 +559,16 @@ export const Sales: React.FC = () => {
                           salesInvoices.filter((i) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
                           receiptVouchers.filter((v) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
                         )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <motion.button
+                          whileHover={{ scale: 1.1 }}
+                          whileTap={{ scale: 0.9 }}
+                          className="text-blue-600 hover:text-blue-800 p-1"
+                          title="تفاصيل العميل"
+                        >
+                          <FileText className="h-4 w-4" />
+                        </motion.button>
                       </td>
                     </motion.tr>
                   ))}
@@ -529,7 +600,9 @@ export const Sales: React.FC = () => {
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
                 >
                   {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.client_id ? `(${c.client_id})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -725,7 +798,9 @@ export const Sales: React.FC = () => {
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
                 >
                   {customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>
+                      {c.name} {c.client_id ? `(${c.client_id})` : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -850,7 +925,9 @@ export const Sales: React.FC = () => {
                 className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
               >
                 {customers.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name} {c.client_id ? `(${c.client_id})` : ''}
+                  </option>
                 ))}
               </select>
             </div>
