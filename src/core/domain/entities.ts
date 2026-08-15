@@ -96,6 +96,13 @@ export interface Customer extends BaseEntity {
   address?: string;
   opening_balance: number;
   credit_limit?: number;
+  client_id?: string;
+  company_name?: string;
+  tax_id?: string;
+  website?: string;
+  is_active?: boolean;
+  credit_status?: string;
+  user_id?: string;
 }
 
 export interface SalesInvoice extends BaseEntity {
