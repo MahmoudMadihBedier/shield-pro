@@ -113,9 +113,13 @@ export class SalesService implements ISalesService {
     // the 'cash' category account, credit sales debit 'ar' (accounts
     // receivable); both credit the 'revenue' account for the invoice total.
     const revenueAcc = (await this.accountRepository.findByCategory('revenue'))[0]?.id;
-    if (newInvoice.payment_method === 'cash') {
+    if (!revenueAcc) {
+      console.warn('Revenue account not found, skipping journal entry for invoice:', newInvoice.id);
+    } else if (newInvoice.payment_method === 'cash') {
       const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
-      if (cashAcc && revenueAcc) {
+      if (!cashAcc) {
+        console.warn('Cash account not found, skipping journal entry for invoice:', newInvoice.id);
+      } else {
         await postDoubleEntry({
           refTable: 'sales_invoices',
           refId: newInvoice.id,
@@ -127,7 +131,9 @@ export class SalesService implements ISalesService {
       }
     } else if (newInvoice.payment_method === 'credit') {
       const arAcc = (await this.accountRepository.findByCategory('ar'))[0]?.id;
-      if (arAcc && revenueAcc) {
+      if (!arAcc) {
+        console.warn('Accounts receivable account not found, skipping journal entry for invoice:', newInvoice.id);
+      } else {
         await postDoubleEntry({
           refTable: 'sales_invoices',
           refId: newInvoice.id,
@@ -206,7 +212,9 @@ export class SalesService implements ISalesService {
     // Journal entry, mirroring Sales.tsx: debit Cash/Bank (the voucher's
     // account), credit AR.
     const arAcc = (await this.accountRepository.findByCategory('ar'))[0]?.id;
-    if (arAcc) {
+    if (!arAcc) {
+      console.warn('Accounts receivable account not found, skipping journal entry for receipt voucher:', newVoucher.id);
+    } else {
       await postDoubleEntry({
         refTable: 'receipt_vouchers',
         refId: newVoucher.id,
