@@ -56,7 +56,11 @@ export class HRService implements IHRService {
     // Expense account (code '60101'), credit the 'cash' category account.
     const salariesExpAcc = await this.accountRepository.findByCode(SALARIES_EXPENSE_ACCOUNT_CODE);
     const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
-    if (salariesExpAcc && cashAcc) {
+    if (!salariesExpAcc) {
+      console.warn('Salaries expense account not found, skipping journal entry for payroll:', newPayrollRun.id);
+    } else if (!cashAcc) {
+      console.warn('Cash account not found, skipping journal entry for payroll:', newPayrollRun.id);
+    } else {
       await postDoubleEntry({
         refTable: 'payroll_runs',
         refId: newPayrollRun.id,
