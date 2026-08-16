@@ -13,6 +13,95 @@
 -- 7. Comprehensive RLS policies for client data isolation
 -- ============================================================================
 
+-- 0. Create CRM tables if they don't exist ------------------------------------
+
+-- CRM Orders table for client order requests
+create table if not exists public.crm_orders (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references public.customers(id) on delete cascade,
+  client_id text references public.customers(client_id) on delete set null,
+  order_number text unique,
+  customer_reference text,
+  order_date timestamptz not null default now(),
+  requested_delivery_date date,
+  status text not null default 'pending' check (status in ('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled')),
+  priority text default 'normal' check (priority in ('low', 'normal', 'high', 'urgent')),
+  payment_method text default 'credit' check (payment_method in ('credit', 'cash', 'bank_transfer', 'online')),
+  payment_status text default 'pending' check (payment_status in ('pending', 'paid', 'partial', 'overdue')),
+  total_amount numeric not null default 0,
+  internal_notes text,
+  delivery_address text,
+  converted_to_invoice_id uuid references public.sales_invoices(id) on delete set null,
+  converted_at timestamptz,
+  converted_by uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- CRM Order Lines table
+create table if not exists public.crm_order_lines (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.crm_orders(id) on delete cascade,
+  item_id uuid not null references public.items(id) on delete restrict,
+  item_name text,
+  item_sku text,
+  qty numeric not null,
+  unit_price numeric not null,
+  discount_percent numeric default 0,
+  discount_amount numeric default 0,
+  tax_amount numeric default 0,
+  tax_rate numeric default 0,
+  line_total numeric not null,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Deliveries table for tracking order deliveries
+create table if not exists public.deliveries (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid references public.crm_orders(id) on delete set null,
+  tracking_number text unique,
+  status text not null default 'pending' check (status in ('pending', 'picked_up', 'in_transit', 'delivered', 'cancelled')),
+  carrier text,
+  estimated_delivery_date date,
+  actual_delivery_date timestamptz,
+  delivery_address text,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Client Notifications table
+create table if not exists public.client_notifications (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references public.customers(id) on delete cascade,
+  type text not null check (type in ('order_status', 'delivery_update', 'payment', 'promotion', 'system')),
+  title text not null,
+  message text not null,
+  data jsonb,
+  read boolean default false,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- Create indexes for performance
+create index if not exists crm_orders_customer_id_idx on public.crm_orders(customer_id);
+create index if not exists crm_orders_status_idx on public.crm_orders(status);
+create index if not exists crm_orders_order_date_idx on public.crm_orders(order_date);
+create index if not exists crm_order_lines_order_id_idx on public.crm_order_lines(order_id);
+create index if not exists crm_order_lines_item_id_idx on public.crm_order_lines(item_id);
+create index if not exists deliveries_order_id_idx on public.deliveries(order_id);
+create index if not exists deliveries_status_idx on public.deliveries(status);
+create index if not exists client_notifications_customer_id_idx on public.client_notifications(customer_id);
+create index if not exists client_notifications_read_idx on public.client_notifications(read);
+
+-- Enable RLS on CRM tables
+alter table public.crm_orders enable row level security;
+alter table public.crm_order_lines enable row level security;
+alter table public.deliveries enable row level security;
+alter table public.client_notifications enable row level security;
+
 -- 1. Client Authentication System ----------------------------------------------
 
 -- Add unique client_id to customers table (public-facing identifier)
