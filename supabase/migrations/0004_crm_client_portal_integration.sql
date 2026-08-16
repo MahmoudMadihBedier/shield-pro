@@ -153,7 +153,11 @@ alter table public.users
 
 -- 2. Enhanced CRM Orders and ERP Integration ---------------------------------
 
--- Enhance crm_orders table for better workflow
+-- Note: Tables were created in section 0 with all required columns
+-- These ALTER TABLE statements are kept for backward compatibility with existing databases
+-- where tables may already exist without these columns
+
+-- Enhance crm_orders table for better workflow (if columns don't exist)
 alter table public.crm_orders
   add column if not exists client_id text references public.customers(client_id),
   add column if not exists order_number text unique,
@@ -167,12 +171,12 @@ alter table public.crm_orders
   add column if not exists converted_at timestamptz,
   add column if not exists converted_by uuid references public.users(id);
 
--- Add indexes for performance
+-- Add indexes for performance (if they don't exist)
 create index if not exists crm_orders_client_id_idx on public.crm_orders(client_id);
 create index if not exists crm_orders_status_idx on public.crm_orders(status);
 create index if not exists crm_orders_order_date_idx on public.crm_orders(order_date);
 
--- Enhance crm_order_lines
+-- Enhance crm_order_lines (if columns don't exist)
 alter table public.crm_order_lines
   add column if not exists item_name text, -- Store item name for historical reference
   add column if not exists item_sku text,
@@ -184,7 +188,7 @@ alter table public.crm_order_lines
 
 -- 3. Delivery Tracking Enhancement -------------------------------------------
 
--- Enhance deliveries table with client-facing information
+-- Enhance deliveries table with client-facing information (if columns don't exist)
 alter table public.deliveries
   add column if not exists order_id uuid references public.crm_orders(id),
   add column if not exists tracking_number text unique,
