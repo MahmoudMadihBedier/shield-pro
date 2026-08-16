@@ -32,6 +32,8 @@ type Customer = {
   credit_limit: number;
   credit_status: string;
   is_active: boolean;
+  tax_id?: string;
+  website?: string;
 };
 
 type Order = {
@@ -123,7 +125,7 @@ export function CRMClientPortal() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Load customer data
+      // Load customer data with all fields
       const { data: customerData } = await supabase
         .from('customers')
         .select('*')
@@ -142,18 +144,18 @@ export function CRMClientPortal() {
 
         setFinancialSummary(financialData);
 
-        // Load orders
+        // Load orders from CRM orders
         const { data: ordersData } = await supabase
-          .from('client_order_history')
+          .from('crm_orders')
           .select('*')
           .eq('customer_id', customerData.id)
           .order('order_date', { ascending: false });
 
         setOrders(ordersData || []);
 
-        // Load invoices
+        // Load invoices from sales invoices
         const { data: invoicesData } = await supabase
-          .from('client_invoices')
+          .from('sales_invoices')
           .select('*')
           .eq('customer_id', customerData.id)
           .order('invoice_date', { ascending: false });
@@ -714,13 +716,26 @@ export function CRMClientPortal() {
                   <h2 className="text-lg font-bold text-gray-900">الملف الشخصي</h2>
                 </div>
                 <div className="p-6">
+                  {/* Client ID Card */}
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-4 mb-6 text-white">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm opacity-90">معرف العميل الخاص بك</p>
+                        <p className="text-2xl font-bold font-mono mt-1">{customer.client_id}</p>
+                      </div>
+                      <div className="bg-white/20 p-3 rounded-full">
+                        <User className="h-8 w-8" />
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-4 mb-6">
                     <div className="bg-blue-100 p-4 rounded-full">
                       <User className="h-8 w-8 text-blue-600" />
                     </div>
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">{customer.name}</h3>
-                      <p className="text-gray-500">{customer.client_id}</p>
+                      <p className="text-gray-500">{customer.company_name || 'عميل فردي'}</p>
                     </div>
                   </div>
 
@@ -742,9 +757,27 @@ export function CRMClientPortal() {
                       <p className="text-gray-900">{customer.address || '-'}</p>
                     </div>
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">الرقم الضريبي</label>
+                      <p className="text-gray-900">{customer.tax_id || '-'}</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">الموقع الإلكتروني</label>
+                      <p className="text-gray-900">{customer.website ? (
+                        <a href={customer.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                          {customer.website}
+                        </a>
+                      ) : '-'}</p>
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">حالة الائتمان</label>
-                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(customer.credit_status)}`}>
-                        {customer.credit_status}
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                        customer.credit_status === 'good' ? 'bg-green-100 text-green-800' :
+                        customer.credit_status === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {customer.credit_status === 'good' ? 'جيدة' :
+                         customer.credit_status === 'warning' ? 'تحذير' :
+                         'محظورة'}
                       </span>
                     </div>
                     <div>

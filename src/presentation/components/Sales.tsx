@@ -24,7 +24,8 @@ import {
   Boxes,
   Share2,
   Copy,
-  Check
+  Check,
+  MessageCircle
 } from 'lucide-react';
 
 // Stable references (not recreated per render) so the data hooks below don't
@@ -74,9 +75,11 @@ export const Sales: React.FC = () => {
 
   // 1. Customer State
   const [custName, setCustName] = useState('');
+  const [custEmail, setCustEmail] = useState('');
   const [custPhone, setCustPhone] = useState('');
   const [custAddress, setCustAddress] = useState('');
   const [custOpening, setCustOpening] = useState('0');
+  const [createdCustomerWithCrm, setCreatedCustomerWithCrm] = useState<any>(null);
 
   // 2. Invoice State
   const [invCustomer, setInvCustomer] = useState('');
@@ -147,17 +150,22 @@ export const Sales: React.FC = () => {
     try {
       const result = await createCustomer({
         name: custName.trim(),
+        email: custEmail.trim() || undefined,
         phone: custPhone.trim() || undefined,
         address: custAddress.trim() || undefined,
         opening_balance: Number(custOpening)
       });
       
       setCustName('');
+      setCustEmail('');
       setCustPhone('');
       setCustAddress('');
       setCustOpening('0');
       
-      // Show the client ID if it was generated
+      // Show the customer with CRM credentials
+      setCreatedCustomerWithCrm(result);
+      
+      // Show success message
       if (result && result.client_id) {
         success(`تم تسجيل العميل بنجاح! معرف العميل: ${result.client_id}`);
       } else {
@@ -181,6 +189,26 @@ export const Sales: React.FC = () => {
     const message = `مرحباً ${customerName}،\n\nمعرف العميل الخاص بك هو: ${clientId}\n\nاستخدم هذا المعرف لتسجيل الدخول إلى بوابة العملاء الخاصة بنا.\n\nيمكنك الدخول من خلال الرابط: ${window.location.origin}`;
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank');
+  };
+
+  // Share customer CRM credentials on WhatsApp
+  const shareCustomerCrmOnWhatsApp = () => {
+    if (!createdCustomerWithCrm?.client_id || !createdCustomerWithCrm?.crm_credentials?.tempPassword) return;
+    
+    const message = `مرحباً ${createdCustomerWithCrm.name}،\n\nتم إنشاء حسابك في بوابة العملاء بنجاح!\n\n🔐 معرف العميل: ${createdCustomerWithCrm.client_id}\n🔑 كلمة المرور المؤقتة: ${createdCustomerWithCrm.crm_credentials.tempPassword}\n\nيرجى تغيير كلمة المرور بعد أول تسجيل دخول.\n\nيمكنك الدخول من خلال الرابط: ${window.location.origin}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  // Copy customer CRM credentials
+  const copyCustomerCrmCredentials = () => {
+    if (!createdCustomerWithCrm?.client_id || !createdCustomerWithCrm?.crm_credentials?.tempPassword) return;
+    
+    const credentials = `معرف العميل: ${createdCustomerWithCrm.client_id}\nكلمة المرور المؤقتة: ${createdCustomerWithCrm.crm_credentials.tempPassword}`;
+    navigator.clipboard.writeText(credentials);
+    setCopiedClientId(createdCustomerWithCrm.client_id);
+    setTimeout(() => setCopiedClientId(null), 2000);
+    success('تم نسخ بيانات الدخول');
   };
 
   // Live Invoice Subtotals
@@ -365,7 +393,7 @@ export const Sales: React.FC = () => {
       </div>
 
       {/* Navigation tabs */}
-      <div className="flex border-b border-gray-200 mb-6 bg-white rounded-lg p-1 shadow-sm">
+      <div className="flex border-b border-gray-200 mb-6 bg-white rounded-lg p-1 shadow-sm flex-wrap">
         <motion.button
           onClick={() => setActiveSubTab('invoices')}
           whileHover={{ scale: 1.02 }}
@@ -399,6 +427,7 @@ export const Sales: React.FC = () => {
           <Users className="h-4 w-4" />
           <span>قائمة وملفات العملاء</span>
         </motion.button>
+
         <motion.button
           onClick={() => {
             setActiveSubTab('statement');
@@ -438,6 +467,19 @@ export const Sales: React.FC = () => {
                       value={custName}
                       onChange={(e) => setCustName(e.target.value)}
                       className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </FormField>
+
+                  <FormField
+                    label="البريد الإلكتروني"
+                    helpText="لإنشاء حساب تلقائي في بوابة العملاء"
+                  >
+                    <input
+                      type="email"
+                      placeholder="client@example.com"
+                      value={custEmail}
+                      onChange={(e) => setCustEmail(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </FormField>
 
@@ -488,6 +530,85 @@ export const Sales: React.FC = () => {
                     حفظ العميل
                   </motion.button>
                 </form>
+
+                {/* CRM Credentials Display */}
+                {createdCustomerWithCrm && (
+                  <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Check className="h-5 w-5 text-green-600" />
+                      <span className="font-bold text-green-800">تم إنشاء الحساب بنجاح!</span>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-1">معرف العميل</label>
+                        <div className="flex items-center gap-2">
+                          <code className="bg-green-100 text-green-800 px-3 py-2 rounded text-sm font-mono flex-1">
+                            {createdCustomerWithCrm.client_id}
+                          </code>
+                          <motion.button
+                            onClick={() => copyClientId(createdCustomerWithCrm.client_id)}
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="text-gray-400 hover:text-gray-600 p-2"
+                            title="نسخ"
+                          >
+                            {copiedClientId === createdCustomerWithCrm.client_id ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                          </motion.button>
+                        </div>
+                      </div>
+                      
+                      {createdCustomerWithCrm.crm_credentials?.tempPassword && (
+                        <div>
+                          <label className="block text-xs font-bold text-gray-600 mb-1">كلمة المرور المؤقتة</label>
+                          <div className="flex items-center gap-2">
+                            <code className="bg-yellow-100 text-yellow-800 px-3 py-2 rounded text-sm font-mono flex-1">
+                              {createdCustomerWithCrm.crm_credentials.tempPassword}
+                            </code>
+                            <motion.button
+                              onClick={copyCustomerCrmCredentials}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              className="text-gray-400 hover:text-gray-600 p-2"
+                              title="نسخ الكل"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </motion.button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2 mt-4">
+                      {createdCustomerWithCrm.crm_credentials?.tempPassword && (
+                        <motion.button
+                          onClick={shareCustomerCrmOnWhatsApp}
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          className="flex-1 flex items-center justify-center gap-2 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-xs transition shadow-md"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          مشاركة على واتساب
+                        </motion.button>
+                      )}
+                      
+                      <motion.button
+                        onClick={() => setCreatedCustomerWithCrm(null)}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-bold text-xs transition"
+                      >
+                        إغلاق
+                      </motion.button>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mt-3">
+                      <p className="text-xs text-blue-800">
+                        <strong>ملاحظة:</strong> يرجى إبلاغ العميل بتغيير كلمة المرور بعد أول تسجيل دخول.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </CardAnimation>
 
