@@ -17,8 +17,8 @@ export class CRMService {
     website?: string;
   }) {
     try {
-      // Generate a random password
-      const tempPassword = Math.random().toString(36).slice(-8);
+      // Generate a cryptographically secure random password
+      const tempPassword = CRMService.generateSecurePassword();
       
       // First create the auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -76,6 +76,30 @@ export class CRMService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  /**
+   * Generate a cryptographically secure random password
+   */
+  private static generateSecurePassword(): string {
+    const array = new Uint8Array(12); // 12 bytes = 16 chars in base64
+    crypto.getRandomValues(array);
+    
+    // Convert to base64 and use only alphanumeric characters
+    const base64 = btoa(String.fromCharCode(...array));
+    const alphanumeric = base64.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+    
+    // Ensure at least one uppercase, one lowercase, and one digit
+    const hasUpper = /[A-Z]/.test(alphanumeric);
+    const hasLower = /[a-z]/.test(alphanumeric);
+    const hasDigit = /[0-9]/.test(alphanumeric);
+    
+    let password = alphanumeric;
+    if (!hasUpper) password = 'A' + password.slice(0, 11);
+    if (!hasLower) password = password.slice(0, 11) + 'a';
+    if (!hasDigit) password = password.slice(0, 11) + '1';
+    
+    return password;
   }
 
   /**

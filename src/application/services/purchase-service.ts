@@ -64,9 +64,13 @@ export class PurchaseService implements IPurchaseService {
     // for the invoice total, credit Cash (cash purchase) or AP (credit
     // purchase).
     const cogsAcc = (await this.accountRepository.findByCategory('cogs'))[0]?.id;
-    if (newInvoice.payment_method === 'cash') {
+    if (!cogsAcc) {
+      console.warn('COGS account not found, skipping journal entry for purchase invoice:', newInvoice.id);
+    } else if (newInvoice.payment_method === 'cash') {
       const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
-      if (cogsAcc && cashAcc) {
+      if (!cashAcc) {
+        console.warn('Cash account not found, skipping journal entry for purchase invoice:', newInvoice.id);
+      } else {
         await postDoubleEntry({
           refTable: 'purchase_invoices',
           refId: newInvoice.id,
@@ -78,7 +82,9 @@ export class PurchaseService implements IPurchaseService {
       }
     } else if (newInvoice.payment_method === 'credit') {
       const apAcc = (await this.accountRepository.findByCategory('ap'))[0]?.id;
-      if (cogsAcc && apAcc) {
+      if (!apAcc) {
+        console.warn('Accounts payable account not found, skipping journal entry for purchase invoice:', newInvoice.id);
+      } else {
         await postDoubleEntry({
           refTable: 'purchase_invoices',
           refId: newInvoice.id,
@@ -135,7 +141,9 @@ export class PurchaseService implements IPurchaseService {
     // Journal entry, mirroring Purchases.tsx: debit AP, credit Cash/Bank (the
     // voucher's account).
     const apAcc = (await this.accountRepository.findByCategory('ap'))[0]?.id;
-    if (apAcc) {
+    if (!apAcc) {
+      console.warn('Accounts payable account not found, skipping journal entry for payment voucher:', newVoucher.id);
+    } else {
       await postDoubleEntry({
         refTable: 'payment_vouchers',
         refId: newVoucher.id,
