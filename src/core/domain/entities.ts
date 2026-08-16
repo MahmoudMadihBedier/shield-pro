@@ -92,10 +92,19 @@ export interface StockMovement extends BaseEntity {
 // Sales Entities
 export interface Customer extends BaseEntity {
   name: string;
+  email?: string;
   phone?: string;
   address?: string;
   opening_balance: number;
   credit_limit?: number;
+  client_id?: string;
+  company_name?: string;
+  tax_id?: string;
+  website?: string;
+  is_active?: boolean;
+  credit_status?: string;
+  user_id?: string;
+  crm_credentials?: { tempPassword: string };
 }
 
 export interface SalesInvoice extends BaseEntity {

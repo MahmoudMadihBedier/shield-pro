@@ -76,8 +76,16 @@ export abstract class BaseRepository<T extends BaseEntity> implements IRepositor
   async create(entity: Omit<T, 'id' | 'created_at' | 'updated_at'>): Promise<T> {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
+    
+    // Generate client_id locally for customers table
+    let additionalFields: any = {};
+    if (this.tableName === 'customers' && !(entity as any).client_id) {
+      additionalFields.client_id = this.generateClientId();
+    }
+    
     const newEntity = {
       ...entity,
+      ...additionalFields,
       id,
       created_at: now,
       updated_at: now
@@ -85,6 +93,19 @@ export abstract class BaseRepository<T extends BaseEntity> implements IRepositor
 
     await this.table.put(newEntity);
     return newEntity;
+  }
+
+  private generateClientId(): string {
+    // Generate client ID in the same format as the database trigger: CLI-XXXXXXXX
+    // Using crypto.getRandomValues for better randomness similar to gen_random_bytes
+    const array = new Uint8Array(4);
+    crypto.getRandomValues(array);
+    const hexPart = Array.from(array)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('')
+      .toUpperCase()
+      .substring(0, 8);
+    return `CLI-${hexPart}`;
   }
 
   async update(id: string, entity: Partial<T>): Promise<T> {

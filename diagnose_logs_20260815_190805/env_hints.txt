@@ -1,0 +1,4 @@
+VITE_SUPABASE_URL=https://viqgnjxujcwluqrxqivh.supabase.co
+VITE_SUPABASE_ANON_KEY=sb_publishable_EPJSz4pR7sRR3e2tCUJKUg_B31EVOli
+SUPABASE_DB_URL=postgresql://postgres:LOLAmahmoud@db.viqgnjxujcwluqrxqivh.supabase.co:5432/postgres
+SUPABASE_POOLER_URL=postgresql://postgres.viqgnjxujcwluqrxqivh:LOLAmahmoud@aws-0-eu-west-1.pooler.supabase.com:5432/postgres
