@@ -337,3 +337,74 @@ export interface Punishment extends BaseEntity {
   given_by?: string;
   date: string;
 }
+
+// CRM Client Portal Entities
+export interface CrmOrder extends BaseEntity {
+  client_id?: string;
+  order_number?: string;
+  customer_id: string;
+  customer_reference?: string;
+  order_date: string;
+  requested_delivery_date?: string;
+  status: 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  priority: 'low' | 'normal' | 'high' | 'urgent';
+  payment_method: 'credit' | 'cash' | 'bank_transfer' | 'online';
+  payment_status: 'pending' | 'paid' | 'partial' | 'overdue';
+  total_amount: number;
+  internal_notes?: string;
+  delivery_address?: string;
+  converted_to_invoice_id?: string;
+  converted_at?: string;
+  converted_by?: string;
+}
+
+export interface CrmOrderLine extends BaseEntity {
+  order_id: string;
+  item_id: string;
+  item_name?: string;
+  item_sku?: string;
+  qty: number;
+  unit_price: number;
+  discount_percent?: number;
+  discount_amount?: number;
+  tax_amount?: number;
+  tax_rate?: number;
+  line_total: number;
+  notes?: string;
+}
+
+export interface Delivery extends BaseEntity {
+  order_id?: string;
+  tracking_number?: string;
+  status: 'pending' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
+  carrier?: string;
+  estimated_delivery_date?: string;
+  actual_delivery_date?: string;
+  delivery_address?: string;
+  notes?: string;
+}
+
+export interface ClientNotification extends BaseEntity {
+  customer_id: string;
+  type: 'order_status' | 'delivery_update' | 'payment' | 'promotion' | 'system';
+  title: string;
+  message: string;
+  data?: any;
+  read: boolean;
+  read_at?: string;
+}
+
+export interface ClientFinancialSummary extends BaseEntity {
+  customer_id: string;
+  client_id?: string;
+  customer_name?: string;
+  opening_balance: number;
+  credit_limit?: number;
+  total_invoiced: number;
+  total_paid: number;
+  current_balance: number;
+  credit_status: 'good' | 'warning' | 'blocked';
+  last_order_date?: string;
+  total_orders?: number;
+  total_purchased?: number;
+}

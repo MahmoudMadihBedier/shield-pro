@@ -5,7 +5,86 @@ import { supabase } from '../../infrastructure/api/supabase';
  */
 export class CRMService {
   /**
+   * Authenticate client using client_id only (no email/password)
+   * 
+   * This implementation looks up the customer by client_id and then
+   * attempts to authenticate using the linked user account.
+   * The linked user account should have been created by the admin
+   * with the client_id as the password for simplicity.
+   */
+  static async authenticateByClientId(clientId: string) {
+    try {
+      // Look up customer by client_id
+      const { data: customerData, error: customerError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('client_id', clientId)
+        .eq('is_active', true)
+        .single();
+
+      if (customerError) {
+        console.error('Customer lookup error:', customerError);
+        return {
+          success: false,
+          error: 'Invalid client ID or client not active'
+        };
+      }
+
+      if (!customerData) {
+        return {
+          success: false,
+          error: 'Invalid client ID or client not active'
+        };
+      }
+
+      // Check if customer has a linked user account
+      if (!customerData.user_id) {
+        return {
+          success: false,
+          error: 'No account linked to this client ID. Please contact the company.'
+        };
+      }
+
+      // For client_id-only auth to work, the admin must have created
+      // a Supabase auth user with the client_id as the password
+      // We authenticate using the customer's email (or a placeholder) and the client_id as password
+      const { data: sessionData, error: sessionError } = await supabase.auth.signInWithPassword({
+        email: customerData.email || `${clientId}@client.placeholder`,
+        password: clientId
+      });
+
+      if (sessionError) {
+        console.error('Auth session error:', sessionError);
+        return {
+          success: false,
+          error: 'Authentication failed. Please contact the company to ensure your account is properly set up.'
+        };
+      }
+
+      if (!sessionData.session) {
+        return {
+          success: false,
+          error: 'Failed to create session. Please contact the company.'
+        };
+      }
+
+      return {
+        success: true,
+        customer: customerData,
+        session: sessionData.session
+      };
+    } catch (error) {
+      console.error('Error authenticating by client ID:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Authentication failed'
+      };
+    }
+  }
+
+  /**
    * Create a new client user account for existing customer
+   * Note: This is deprecated - we now use client_id only authentication
    */
   static async createClientUser(customerData: {
     name: string;
@@ -17,8 +96,8 @@ export class CRMService {
     website?: string;
   }) {
     try {
-      // Generate a random password
-      const tempPassword = Math.random().toString(36).slice(-8);
+      // Generate a cryptographically secure random password
+      const tempPassword = CRMService.generateSecurePassword();
       
       // First create the auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -79,7 +158,33 @@ export class CRMService {
   }
 
   /**
+   * Generate a cryptographically secure random password
+   * Note: This is deprecated - client_id authentication doesn't use passwords
+   */
+  private static generateSecurePassword(): string {
+    const array = new Uint8Array(12); // 12 bytes = 16 chars in base64
+    crypto.getRandomValues(array);
+    
+    // Convert to base64 and use only alphanumeric characters
+    const base64 = btoa(String.fromCharCode(...array));
+    const alphanumeric = base64.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12);
+    
+    // Ensure at least one uppercase, one lowercase, and one digit
+    const hasUpper = /[A-Z]/.test(alphanumeric);
+    const hasLower = /[a-z]/.test(alphanumeric);
+    const hasDigit = /[0-9]/.test(alphanumeric);
+    
+    let password = alphanumeric;
+    if (!hasUpper) password = 'A' + password.slice(0, 11);
+    if (!hasLower) password = password.slice(0, 11) + 'a';
+    if (!hasDigit) password = password.slice(0, 11) + '1';
+    
+    return password;
+  }
+
+  /**
    * Link CRM user to existing customer
+   * Note: This method is deprecated - use SalesService.linkCrmUserToCustomer instead
    */
   static async linkCrmUserToCustomer(customerId: string, userId: string) {
     try {
