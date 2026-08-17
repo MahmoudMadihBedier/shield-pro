@@ -19,6 +19,7 @@ import {
   Download,
   LogOut
 } from 'lucide-react';
+import { CRMLogin } from './CRMLogin';
 
 type Customer = {
   id: string;
@@ -100,6 +101,7 @@ export function CRMClientPortal() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showOrderDetails, setShowOrderDetails] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   useEffect(() => {
     loadClientData();
@@ -123,9 +125,13 @@ export function CRMClientPortal() {
       
       // Get current user
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setNeedsLogin(true);
+        setLoading(false);
+        return;
+      }
 
-      // Load customer data with all fields
+      // Load customer data by user_id
       const { data: customerData } = await supabase
         .from('customers')
         .select('*')
@@ -274,6 +280,11 @@ export function CRMClientPortal() {
   }
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  // Show login screen if not authenticated
+  if (needsLogin) {
+    return <CRMLogin />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50" dir="rtl">

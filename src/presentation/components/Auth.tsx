@@ -11,7 +11,7 @@ import { useFormValidation, createAuthValidator } from '../../application/hooks/
 type UserType = 'employee' | 'client';
 
 export const Auth: React.FC = () => {
-  const { signIn, signUp, signInClient, registerClient } = useAuth();
+  const { signIn, signUp, signInClient } = useAuth();
   const { success, error } = useToast();
   const [userType, setUserType] = useState<UserType | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -29,49 +29,20 @@ export const Auth: React.FC = () => {
     e.preventDefault();
     
     if (userType === 'client') {
-      // Client authentication flow
-      if (isSignUp) {
-        // Client registration with client ID
-        if (!clientId.trim()) {
-          error('يرجى إدخال معرف العميل');
-          return;
-        }
-        
-        setLoading(true);
-        try {
-          const result = await registerClient(clientId, email, password, name);
-          if (result.success) {
-            success('تم إنشاء حساب العميل بنجاح! يمكنك الآن تسجيل الدخول.');
-            setIsSignUp(false);
-            setClientId('');
-            setEmail('');
-            setPassword('');
-            setName('');
-            resetValidations();
-          } else {
-            error(result.error || 'فشل إنشاء حساب العميل');
-          }
-        } catch (err: any) {
-          error(err.message || 'فشل إنشاء حساب العميل');
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Client login with client ID
-        if (!clientId.trim()) {
-          error('يرجى إدخال معرف العميل');
-          return;
-        }
-        
-        setLoading(true);
-        try {
-          await signInClient(clientId, email, password);
-          success('تم تسجيل الدخول بنجاح!');
-        } catch (err: any) {
-          error(err.message || 'فشل تسجيل الدخول');
-        } finally {
-          setLoading(false);
-        }
+      // Client authentication flow - only login with client ID
+      if (!clientId.trim()) {
+        error('يرجى إدخال معرف العميل');
+        return;
+      }
+      
+      setLoading(true);
+      try {
+        await signInClient(clientId);
+        success('تم تسجيل الدخول بنجاح!');
+      } catch (err: any) {
+        error(err.message || 'فشل تسجيل الدخول');
+      } finally {
+        setLoading(false);
       }
     } else {
       // Employee authentication flow (existing logic)
@@ -377,13 +348,13 @@ export const Auth: React.FC = () => {
                   العودة
                 </motion.button>
                 <h3 className="text-xl font-bold text-gray-800">
-                  {isSignUp ? 'تسجيل عميل جديد' : 'تسجيل دخول العميل'}
+                  تسجيل دخول العميل
                 </h3>
               </div>
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm text-green-800">
-                  <strong>ملاحظة:</strong> يلزم الحصول على معرف العميل (CLI-XXXXXXXX) من الشركة للتسجيل كعميل.
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>ملاحظة:</strong> يرجى التواصل مع الشركة للحصول على معرف العميل (CLI-XXXXXXXX) للوصول إلى بوابة العملاء.
                 </p>
               </div>
 
@@ -536,25 +507,10 @@ export const Auth: React.FC = () => {
                         />
                         جاري التحميل...
                       </span>
-                    ) : isSignUp ? 'تسجيل العميل' : 'دخول العميل'}
+                    ) : 'دخول العميل'}
                   </motion.button>
                 </div>
               </form>
-
-              <div className="mt-6 flex items-center justify-center">
-                <motion.button
-                  type="button"
-                  onClick={() => {
-                    setIsSignUp(!isSignUp);
-                    resetValidations();
-                  }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="text-sm text-green-600 hover:text-green-500 font-medium transition-colors"
-                >
-                  {isSignUp ? 'لديك حساب بالفعل؟ سجل الدخول هنا' : 'عميل جديد؟ سجل الآن'}
-                </motion.button>
-              </div>
             </div>
           )}
         </div>
