@@ -19,7 +19,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<boolean>;
-  signInClient: (clientId: string, email: string, password: string) => Promise<void>;
+  signInClient: (clientId: string) => Promise<void>;
   registerClient: (clientId: string, email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   checkPermission: (module: string, action: 'view' | 'add' | 'edit' | 'delete') => boolean;
@@ -340,32 +340,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return !!profile.permissions?.[module]?.[action];
   };
 
-  const signInClient = async (clientId: string, email: string, password: string) => {
+  const signInClient = async (clientId: string) => {
     setLoading(true);
     try {
-      // First authenticate with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-
-      // Verify this is a client user with the correct client_id
-      const { data: customerData, error: customerError } = await supabase
-        .from('customers')
-        .select('*, users(*)')
-        .eq('client_id', clientId)
-        .eq('user_id', data.user.id)
-        .single();
-
-      if (customerError || !customerData) {
-        await supabase.auth.signOut();
-        throw new Error('معرف العميل غير صحيح أو غير مرتبط بهذا الحساب');
+      // Use CRM service to authenticate by client_id only
+      const { CRMService } = await import('./crm-service');
+      const result = await CRMService.authenticateByClientId(clientId);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'فشل تسجيل الدخول');
       }
 
-      // Check if the user has client_portal role
-      if (customerData.users?.role_name !== 'client_portal') {
-        await supabase.auth.signOut();
-        throw new Error('هذا الحساب ليس حساب عميل');
-      }
-
+      // The session is already created by CRMService
       // The profile will be loaded by the onAuthStateChange handler
     } catch (err: any) {
       await supabase.auth.signOut();
