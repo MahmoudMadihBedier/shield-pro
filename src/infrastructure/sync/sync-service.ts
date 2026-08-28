@@ -1,6 +1,11 @@
 import { db, type OfflineQueueItem } from '../database/dexie';
 import { supabase } from '../api/supabase';
-import { SEQUENCE_PREFIXES, SEQUENCE_COLUMNS, AUDIT_EXCLUDED_TABLES, SYNC_TABLES } from '../../shared/constants/sequence-config';
+import { SEQUENCE_PREFIXES, AUDIT_EXCLUDED_TABLES, SYNC_TABLES } from '../../shared/constants/sequence-config';
+
+export interface WriteResult {
+  success: boolean;
+  error?: string;
+}
 
 export type SyncState = {
   status: 'online' | 'offline' | 'syncing' | 'error';
@@ -76,42 +81,28 @@ function addLog(msg: string) {
   updateSyncState({ syncLogs: updatedLogs });
 }
 
-async function generateNextSequenceNo(tableName: string, prefix: string): Promise<string> {
-  try {
-    const colName = SEQUENCE_COLUMNS[tableName];
-    if (!colName) {
-      throw new Error(`No sequence column mapping found for table ${tableName}`);
-    }
-
-    const { data, error } = await (supabase
-      .from(tableName)
-      .select(colName as any) as any)
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    let nextNo = 10001;
-    if (!error && data && data.length > 0) {
-      const record = data[0] as any;
-      const val = record[colName] || '';
-      const match = val.match(/\d+/);
-      if (match) {
-        nextNo = parseInt(match[0], 10) + 1;
-      }
-    }
-    return `${prefix}-${nextNo}`;
-  } catch (err: any) {
-    addLog(`خطأ توليد السيرفر للعمود: ${err.message}. استخدام المولد التلقائي البديل.`);
+// Atomic server-side counter (public.next_sequence_number RPC) instead of a
+// client-side read-latest-then-increment, which raced under concurrent sync
+// passes and could hand out the same INV-/BATCH-/etc. number twice.
+async function generateNextSequenceNo(prefix: string): Promise<string> {
+  const { data, error } = await supabase.rpc('next_sequence_number', { p_prefix: prefix });
+  if (error || !data) {
+    addLog(`خطأ توليد الرقم التسلسلي: ${error?.message ?? 'غير معروف'}. استخدام المولد التلقائي البديل.`);
     return `${prefix}-${Math.floor(Math.random() * 900000) + 100000}`;
   }
+  return data as string;
 }
 
-// Queue offline write
+// Queue offline write. Returns a result instead of throwing/swallowing so
+// callers that chain multiple writes into one logical operation (e.g.
+// postDoubleEntry's debit+credit pair) can detect a failed leg instead of
+// silently proceeding as if every step succeeded.
 export async function queueOfflineWrite(
   tableName: string,
   action: 'insert' | 'update' | 'delete',
   recordId: string,
   data: any
-) {
+): Promise<WriteResult> {
   try {
     // 1. Write to local Dexie table (if not deleting)
     const table = (db as any)[tableName];
@@ -148,8 +139,11 @@ export async function queueOfflineWrite(
     if (navigator.onLine) {
       triggerSync();
     }
+
+    return { success: true };
   } catch (err: any) {
     addLog(`خطأ أثناء الكتابة المحلية: ${err.message}`);
+    return { success: false, error: err.message };
   }
 }
 
@@ -162,18 +156,20 @@ async function syncQueueItem(item: OfflineQueueItem) {
     (data.invoice_no?.startsWith('PENDING-') ||
       data.return_no?.startsWith('PENDING-') ||
       data.voucher_no?.startsWith('PENDING-') ||
-      data.batch_no?.startsWith('PENDING-'));
+      data.batch_no?.startsWith('PENDING-') ||
+      data.order_no?.startsWith('PENDING-'));
 
   let finalData = { ...data };
 
   // Resolve pending sequence numbers on sync
   if (isPendingSequence) {
     const prefix = SEQUENCE_PREFIXES[table_name];
-    const seqNo = await generateNextSequenceNo(table_name, prefix);
+    const seqNo = await generateNextSequenceNo(prefix);
     if (finalData.invoice_no) finalData.invoice_no = seqNo;
     else if (finalData.return_no) finalData.return_no = seqNo;
     else if (finalData.voucher_no) finalData.voucher_no = seqNo;
     else if (finalData.batch_no) finalData.batch_no = seqNo;
+    else if (finalData.order_no) finalData.order_no = seqNo;
 
     // Update local table with final seqNo
     const table = (db as any)[table_name];
@@ -252,15 +248,31 @@ export async function pullFromServer() {
 
       // Records this device deleted/updated/inserted locally but hasn't pushed
       // yet keep their local version; the server copy will land once it syncs.
-      const toPut = data.filter((rec: any) => !pendingIds.has(rec.id));
+      const localRecords = await localTable.toArray();
+      const localById = new Map(localRecords.map((r: any) => [r.id, r]));
+
+      const toPut = data.filter((rec: any) => {
+        if (pendingIds.has(rec.id)) return false;
+        // Every local write queues synchronously, so a local copy newer than
+        // what the server just returned but NOT in the pending queue should
+        // not happen -- if it does, something is wrong (a write that landed
+        // in Dexie without reaching the queue). Don't silently clobber it.
+        const local = localById.get(rec.id) as any;
+        if (local?.updated_at && rec.updated_at && local.updated_at > rec.updated_at) {
+          addLog(`تخطي تحديث ${t}/${rec.id}: نسخة محلية أحدث لم تتم مزامنتها بعد`);
+          return false;
+        }
+        return true;
+      });
       if (toPut.length > 0) {
         await localTable.bulkPut(toPut);
       }
 
       // Drop local records that no longer exist on the server (deleted by
-      // another user) — but never a record still pending local sync.
+      // another user) — but never a record still pending local sync. Reuses
+      // the localRecords snapshot taken above (bulkPut only touches records
+      // that still exist on the server, so it can't change this set).
       const serverIds = new Set(data.map((rec: any) => rec.id));
-      const localRecords = await localTable.toArray();
       const staleIds = localRecords
         .map((rec: any) => rec.id)
         .filter((id: string) => !serverIds.has(id) && !pendingIds.has(id));

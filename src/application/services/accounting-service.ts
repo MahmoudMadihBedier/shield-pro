@@ -1,12 +1,14 @@
 import { IAccountingService } from '../../core/interfaces/services';
-import { Account, AccountTransaction } from '../../core/domain/entities';
-import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/types';
+import { Account, AccountTransaction, CashVoucher } from '../../core/domain/entities';
+import { PaginationParams, PaginatedResult, EntityFilter, ProfitLoss } from '../../core/types';
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
+import { postDoubleEntry } from './accounting-helpers';
 
 export class AccountingService implements IAccountingService {
   private accountRepository = RepositoryFactory.getAccountRepository();
   private accountTransactionRepository = RepositoryFactory.getAccountTransactionRepository();
+  private cashVoucherRepository = RepositoryFactory.getCashVoucherRepository();
 
   async getAccounts(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Account>> {
     return await this.accountRepository.findAll(filter, params);
@@ -44,7 +46,7 @@ export class AccountingService implements IAccountingService {
     return total;
   }
 
-  async getProfitLoss(startDate: string, endDate: string): Promise<any> {
+  async getProfitLoss(startDate: string, endDate: string): Promise<ProfitLoss> {
     // Mirrors the inline P&L calculation in Reports.tsx (getPnlRevenue /
     // calculateCategoryBalance): revenue accounts increase with credit,
     // expense accounts increase with debit. Transactions are filtered by
@@ -77,5 +79,103 @@ export class AccountingService implements IAccountingService {
       expenses,
       netProfit: revenue - expenses
     };
+  }
+
+  // Branch-scoped P&L for a branch accountant — same computation as
+  // getProfitLoss, filtered to transactions tagged with this warehouse (or
+  // unscoped/company-level ones when warehouseId is null, matching the RLS
+  // predicate that already governs what a branch accountant can even read).
+  async getProfitLossForWarehouse(startDate: string, endDate: string, warehouseId: string | null): Promise<ProfitLoss> {
+    const revenueAccounts = await this.accountRepository.findByCategory('revenue');
+    const expenseAccounts = await this.accountRepository.findByCategory('expense');
+
+    const inScope = (tx: AccountTransaction): boolean =>
+      tx.date >= startDate && tx.date <= endDate && (warehouseId === null || tx.warehouse_id === warehouseId);
+
+    let revenue = 0;
+    for (const account of revenueAccounts) {
+      const txs = await this.accountTransactionRepository.findByAccountId(account.id);
+      revenue += txs.filter(inScope).reduce((sum, tx) => sum + Number(tx.credit) - Number(tx.debit), 0);
+    }
+
+    let expenses = 0;
+    for (const account of expenseAccounts) {
+      const txs = await this.accountTransactionRepository.findByAccountId(account.id);
+      expenses += txs.filter(inScope).reduce((sum, tx) => sum + Number(tx.debit) - Number(tx.credit), 0);
+    }
+
+    return { revenue, expenses, netProfit: revenue - expenses };
+  }
+
+  // Branch-scoped daily cash position: cash/bank account_transactions tagged
+  // to this warehouse, plus this branch's cash_vouchers (receipts add,
+  // disbursements subtract).
+  async getDailyCashPositionForWarehouse(date: string, warehouseId: string | null): Promise<number> {
+    const cashAccounts = await this.accountRepository.findByCategory('cash');
+    const bankAccounts = await this.accountRepository.findByCategory('bank');
+    const accountIds = new Set([...cashAccounts, ...bankAccounts].map((a) => a.id));
+
+    let total = 0;
+    for (const accountId of accountIds) {
+      const txs = await this.accountTransactionRepository.findByAccountId(accountId);
+      total += txs
+        .filter((tx) => tx.date === date && (warehouseId === null || tx.warehouse_id === warehouseId))
+        .reduce((sum, tx) => sum + Number(tx.debit) - Number(tx.credit), 0);
+    }
+
+    const vouchers = await this.cashVoucherRepository.findByDateRange(date, date);
+    for (const v of vouchers) {
+      if (warehouseId !== null && (v.warehouse_id || null) !== warehouseId) continue;
+      total += v.voucher_type === 'receipt' ? Number(v.amount) : -Number(v.amount);
+    }
+
+    return total;
+  }
+
+  async getCashVouchers(warehouseId: string | null): Promise<CashVoucher[]> {
+    return warehouseId === null
+      ? (await this.cashVoucherRepository.findAll(undefined, { page: 1, limit: Number.MAX_SAFE_INTEGER })).data
+      : await this.cashVoucherRepository.findByWarehouseId(warehouseId);
+  }
+
+  // Generic receipt/disbursement with a free-text reason, independent of any
+  // specific customer/supplier invoice (petty cash, misc income, owner
+  // drawings...) — posts a real double-entry so it still shows up in P&L/cash
+  // balance queries, not just the cash_vouchers list.
+  async createCashVoucher(
+    voucherType: 'receipt' | 'disbursement',
+    amount: number,
+    accountId: string,
+    reason: string,
+    warehouseId: string | null,
+    date?: string
+  ): Promise<CashVoucher> {
+    const txDate = date ?? new Date().toISOString().split('T')[0];
+    const newVoucher = await this.cashVoucherRepository.create({
+      voucher_type: voucherType,
+      amount,
+      account_id: accountId,
+      warehouse_id: warehouseId,
+      reason,
+      date: txDate
+    });
+    await queueOfflineWrite('cash_vouchers', 'insert', newVoucher.id, newVoucher);
+
+    // Receipt: debit the cash/bank account, credit a generic "other income"
+    // style offset (capital); disbursement: the reverse. Falls back to the
+    // same account on both legs (net zero net-worth effect, just recorded)
+    // if no capital account exists, so this never blocks the voucher itself.
+    const capitalAcc = (await this.accountRepository.findByCategory('capital'))[0]?.id || accountId;
+    await postDoubleEntry({
+      refTable: 'cash_vouchers',
+      refId: newVoucher.id,
+      debitAccountId: voucherType === 'receipt' ? accountId : capitalAcc,
+      creditAccountId: voucherType === 'receipt' ? capitalAcc : accountId,
+      amount,
+      date: txDate,
+      warehouseId
+    });
+
+    return newVoucher;
   }
 }

@@ -7,12 +7,14 @@ import { useInventory, useStockMovements } from '../../application/hooks/use-inv
 import { PaginationParams } from '../../core/types';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
+import { CashVouchers } from './CashVouchers';
 import {
   DollarSign,
   TrendingUp,
   Percent,
   TrendingDown,
-  Building
+  Building,
+  Wallet
 } from 'lucide-react';
 
 // Stable reference (not recreated per render) so the data hooks below don't
@@ -22,7 +24,7 @@ const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
 
 export const Accounting: React.FC = () => {
   // Tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity'>('liquidity');
+  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity' | 'vouchers'>('liquidity');
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
   const { accounts: accountsResult, getCashBankBalance } = useAccounts();

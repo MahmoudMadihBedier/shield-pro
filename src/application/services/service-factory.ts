@@ -13,6 +13,9 @@ import { AccountingService } from './accounting-service';
 import { ManufacturingService } from './manufacturing-service';
 import { HRService } from './hr-service';
 import { TaskService } from './task-service';
+import { RepLedgerService } from './rep-ledger-service';
+import { DistributionService } from './distribution-service';
+import { AnalyticsService } from './analytics-service';
 
 // Singleton instances
 let instances: any = {};
@@ -79,6 +82,27 @@ export class ServiceFactory {
       instances.taskService = new TaskService();
     }
     return instances.taskService;
+  }
+
+  static getRepLedgerService(): RepLedgerService {
+    if (!instances.repLedgerService) {
+      instances.repLedgerService = new RepLedgerService();
+    }
+    return instances.repLedgerService;
+  }
+
+  static getDistributionService(): DistributionService {
+    if (!instances.distributionService) {
+      instances.distributionService = new DistributionService();
+    }
+    return instances.distributionService;
+  }
+
+  static getAnalyticsService(): AnalyticsService {
+    if (!instances.analyticsService) {
+      instances.analyticsService = new AnalyticsService();
+    }
+    return instances.analyticsService;
   }
 
   static getAuthService(): IAuthService {
