@@ -50,6 +50,14 @@ class ERPDatabase extends Dexie {
   employee_reports!: Table<any, string>;
   bonuses!: Table<any, string>;
   punishments!: Table<any, string>;
+  rep_stock_ledger!: Table<any, string>;
+  rep_cash_ledger!: Table<any, string>;
+  rep_closeout_sessions!: Table<any, string>;
+  production_requests!: Table<any, string>;
+  distribution_orders!: Table<any, string>;
+  distribution_order_lines!: Table<any, string>;
+  production_lines!: Table<any, string>;
+  cash_vouchers!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -107,6 +115,34 @@ class ERPDatabase extends Dexie {
       employee_reports: 'id, reporter_id, reported_employee_id, status',
       bonuses: 'id, employee_id, date',
       punishments: 'id, employee_id, date'
+    });
+
+    // v5: Rep stock/cash-in-hand ledger + daily close-out sessions
+    this.version(5).stores({
+      rep_stock_ledger: 'id, rep_user_id, item_id, closeout_session_id',
+      rep_cash_ledger: 'id, rep_user_id, closeout_session_id',
+      rep_closeout_sessions: 'id, rep_user_id, warehouse_id, session_date, status'
+    });
+
+    // v6: Production requests (factory employee -> purchasing manager approval)
+    this.version(6).stores({
+      production_requests: 'id, item_id, requested_by, status'
+    });
+
+    // v7: Main-to-branch distribution orders
+    this.version(7).stores({
+      distribution_orders: 'id, order_no, from_warehouse_id, to_warehouse_id, status',
+      distribution_order_lines: 'id, order_id, item_id'
+    });
+
+    // v8: Production lines (item commercial fields + analytics)
+    this.version(8).stores({
+      production_lines: 'id, name'
+    });
+
+    // v9: Generic cash vouchers (branch-scoped accounting)
+    this.version(9).stores({
+      cash_vouchers: 'id, warehouse_id, account_id, date'
     });
   }
 }

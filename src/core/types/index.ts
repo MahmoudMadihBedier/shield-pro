@@ -28,3 +28,18 @@ export interface EntityFilter {
 export type SyncStatus = 'online' | 'offline' | 'syncing' | 'error';
 
 export type DatabaseAction = 'insert' | 'update' | 'delete';
+
+export interface CustomerStatementEntry {
+  date: string;
+  type: string;
+  description: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface ProfitLoss {
+  revenue: number;
+  expenses: number;
+  netProfit: number;
+}

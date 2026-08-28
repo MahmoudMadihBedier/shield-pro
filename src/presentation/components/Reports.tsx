@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../infrastructure/database/dexie';
 import { getSetting } from '../../shared/utils/settings-helper';
+import { ProductPerformanceReport } from './ProductPerformanceReport';
 import {
   FileText,
   DollarSign,
   Percent,
-  Activity
+  Activity,
+  TrendingUp
 } from 'lucide-react';
 
 export const Reports: React.FC = () => {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'pnl' | 'aging' | 'inventory' | 'production' | 'cashflow'>('pnl');
+  const [activeTab, setActiveTab] = useState<'pnl' | 'aging' | 'inventory' | 'production' | 'performance' | 'cashflow'>('pnl');
 
   // Master lists
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -256,10 +258,20 @@ export const Reports: React.FC = () => {
           <Activity className="h-4 w-4" />
           <span>تكلفة إنتاج دفعات الصمغ والعلب</span>
         </button>
+        <button
+          onClick={() => setActiveTab('performance')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeTab === 'performance' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <TrendingUp className="h-4 w-4" />
+          <span>أداء المنتجات والأكثر مبيعاً</span>
+        </button>
       </div>
 
       {/* Report Content */}
       <div className="bg-white shadow rounded-lg p-6">
+        {activeTab === 'performance' && <ProductPerformanceReport />}
         {activeTab === 'pnl' && (
           <div className="space-y-6">
             <div className="border-b pb-3">

@@ -25,11 +25,6 @@ export interface ISyncService {
   setCurrentUserId(userId: string | null): void;
 }
 
-export interface ISequenceGenerator {
-  generateNext(tableName: string, prefix: string): Promise<string>;
-  generatePending(tableName: string, prefix: string): string;
-}
-
 export interface IAuditService {
   log(tableName: string, action: DatabaseAction, recordId: string, oldValue: any, newValue: any): Promise<void>;
   isTableExcluded(tableName: string): boolean;

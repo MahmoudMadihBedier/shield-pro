@@ -49,7 +49,7 @@ export class InventoryService implements IInventoryService {
       const stock = await this.calculateStock(item.id);
       const reorderLevel = threshold !== undefined ? threshold : item.reorder_level;
       if (stock <= reorderLevel) {
-        lowStockItems.push({ ...item, currentStock: stock } as any);
+        lowStockItems.push({ ...item, currentStock: stock });
       }
     }
 

@@ -5,6 +5,7 @@ import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
 import { useCustomers, useSalesInvoices, useReceiptVouchers, useCustomerStatement } from '../../application/hooks/use-sales';
+import { useAuth } from '../../application/services/auth-service';
 import { useAccounts } from '../../application/hooks/use-accounting';
 import { useInventory } from '../../application/hooks/use-inventory';
 import { useRecipes } from '../../application/hooks/use-manufacturing';
@@ -36,6 +37,13 @@ const PACKAGING_RECIPE_FILTER: EntityFilter = { recipe_type: 'packaging' };
 
 export const Sales: React.FC = () => {
   const { success, error, warning } = useToast();
+  const { profile, checkPermission } = useAuth();
+  // A customer created by anyone other than an admin (settings:edit) starts
+  // 'pending' until an admin assigns it to a branch and approves it — a
+  // sales rep can still record the customer immediately, they just can't
+  // self-approve/self-assign a branch (enforced server-side too, see
+  // enforce_admin_only_customer_branch).
+  const isAdminActor = profile?.role_name === 'Master Admin' || checkPermission('settings', 'edit');
 
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
@@ -44,7 +52,7 @@ export const Sales: React.FC = () => {
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
-  const { customers: customersResult, createCustomer } = useCustomers();
+  const { customers: customersResult, createCustomer, approveCustomer } = useCustomers();
   const customers = customersResult.data;
 
   const { invoices: salesInvoicesResult, createInvoice } = useSalesInvoices(undefined, UNPAGINATED);
@@ -153,7 +161,8 @@ export const Sales: React.FC = () => {
         email: custEmail.trim() || undefined,
         phone: custPhone.trim() || undefined,
         address: custAddress.trim() || undefined,
-        opening_balance: Number(custOpening)
+        opening_balance: Number(custOpening),
+        approval_status: isAdminActor ? 'approved' : 'pending'
       });
       
       setCustName('');
@@ -173,6 +182,23 @@ export const Sales: React.FC = () => {
       }
     } catch (e) {
       error(getErrorMessage(e, 'فشل تسجيل العميل'));
+    }
+  };
+
+  // Branch picked in the pending-customer-approval dropdown, keyed by customer id.
+  const [approvalWarehouse, setApprovalWarehouse] = useState<{ [customerId: string]: string }>({});
+
+  const handleApproveCustomer = async (customerId: string) => {
+    const warehouseId = approvalWarehouse[customerId] || warehouses[0]?.id;
+    if (!warehouseId) {
+      error('يرجى إضافة فرع (مخزن) أولاً من شاشة المخزون قبل اعتماد العميل');
+      return;
+    }
+    try {
+      await approveCustomer(customerId, warehouseId);
+      success('تم اعتماد العميل وتعيين الفرع بنجاح');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل اعتماد العميل'));
     }
   };
 
@@ -268,6 +294,46 @@ export const Sales: React.FC = () => {
     setInvLines(updated);
   };
 
+  // Best-effort GPS stamp — reps must create invoices with their current
+  // location per the target workflow. Never blocks the sale: a denied
+  // permission or a device with no GPS just leaves lat/lng null.
+  const captureCurrentLocation = (): Promise<{ lat: number | null; lng: number | null }> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        resolve({ lat: null, lng: null });
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve({ lat: null, lng: null }),
+        { timeout: 5000, maximumAge: 60000 }
+      );
+    });
+  };
+
+  const printReceipt = (invoice: any, lines: any[], customerName: string) => {
+    const win = window.open('', '_blank', 'width=380,height=600');
+    if (!win) return;
+    const rows = lines.map((l: any) => {
+      const item = items.find((i: any) => i.id === l.item_id);
+      return `<tr><td>${item?.name || l.item_id}</td><td>${l.qty}</td><td>${formatCurrency(l.unit_price)}</td><td>${formatCurrency(l.line_total)}</td></tr>`;
+    }).join('');
+    win.document.write(`
+      <html dir="rtl"><head><title>فاتورة ${invoice.invoice_no}</title>
+      <style>body{font-family:sans-serif;font-size:13px;padding:12px}table{width:100%;border-collapse:collapse}td,th{padding:4px;border-bottom:1px solid #ddd;text-align:right}h2{margin:0 0 4px}</style>
+      </head><body>
+      <h2>فاتورة مبيعات</h2>
+      <div>رقم: ${invoice.invoice_no}</div>
+      <div>العميل: ${customerName}</div>
+      <div>التاريخ: ${new Date().toLocaleString('ar-EG')}</div>
+      <table><thead><tr><th>الصنف</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>${rows}</tbody></table>
+      <h3>الإجمالي: ${formatCurrency(invoice.total)}</h3>
+      <script>window.print()</script>
+      </body></html>
+    `);
+    win.document.close();
+  };
+
   // Create Invoice — stock deduction and journal-entry posting now happen
   // inside SalesService.createInvoice instead of here.
   const handleSaveInvoice = async (e: React.FormEvent) => {
@@ -282,8 +348,24 @@ export const Sales: React.FC = () => {
       const disc = Number(invDiscount) || 0;
       const tax = calculateInvoiceTax(sub);
       const total = calculateInvoiceTotal();
+      const { lat, lng } = await captureCurrentLocation();
 
-      await createInvoice(
+      const lines = invLines.map((line: any) => {
+        const lQty = Number(line.qty) || 0;
+        const lPrice = Number(line.unit_price) || 0;
+        const lDisc = Number(line.discount) || 0;
+        return {
+          item_id: line.item_id,
+          // overwritten by SalesService.createInvoice with the real invoice id
+          invoice_id: '',
+          qty: lQty,
+          unit_price: lPrice,
+          discount: lDisc,
+          line_total: (lQty * lPrice) - lDisc
+        };
+      });
+
+      const newInvoice = await createInvoice(
         {
           invoice_no: `PENDING-INV-${Date.now()}`,
           customer_id: invCustomer,
@@ -293,28 +375,20 @@ export const Sales: React.FC = () => {
           discount: disc,
           tax,
           total,
-          status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid'
+          status: invPaymentMethod === 'cash' ? 'paid' : 'unpaid',
+          lat,
+          lng
         },
-        invLines.map((line: any) => {
-          const lQty = Number(line.qty) || 0;
-          const lPrice = Number(line.unit_price) || 0;
-          const lDisc = Number(line.discount) || 0;
-          return {
-            item_id: line.item_id,
-            // overwritten by SalesService.createInvoice with the real invoice id
-            invoice_id: '',
-            qty: lQty,
-            unit_price: lPrice,
-            discount: lDisc,
-            line_total: (lQty * lPrice) - lDisc
-          };
-        }),
+        lines,
         invWarehouse
       );
 
       setInvDiscount('0');
       setInvLines([{ item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
       success('تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
+
+      const customerName = customers.find((c) => c.id === invCustomer)?.name || '';
+      printReceipt(newInvoice, lines, customerName);
     } catch (e) {
       error(getErrorMessage(e, 'فشل حفظ الفاتورة'));
     }
@@ -586,6 +660,7 @@ export const Sales: React.FC = () => {
                     <th className="py-3 px-4">الهاتف</th>
                     <th className="py-3 px-4">العنوان</th>
                     <th className="py-3 px-4 text-center">الرصيد الجاري</th>
+                    <th className="py-3 px-4 text-center">الفرع</th>
                     <th className="py-3 px-4 text-center">إجراءات</th>
                   </tr>
                 </thead>
@@ -637,6 +712,35 @@ export const Sales: React.FC = () => {
                           Number(c.opening_balance) +
                           salesInvoices.filter((i) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
                           receiptVouchers.filter((v) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {c.approval_status === 'pending' ? (
+                          isAdminActor ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <select
+                                value={approvalWarehouse[c.id] || warehouses[0]?.id || ''}
+                                onChange={(e) => setApprovalWarehouse({ ...approvalWarehouse, [c.id]: e.target.value })}
+                                className="border rounded text-xs py-1 px-1"
+                              >
+                                {warehouses.map(w => (
+                                  <option key={w.id} value={w.id}>{w.name}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => handleApproveCustomer(c.id)}
+                                className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200"
+                              >
+                                موافقة
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">بانتظار الموافقة</span>
+                          )
+                        ) : (
+                          <span className="text-xs text-gray-600">
+                            {warehouses.find(w => w.id === c.warehouse_id)?.name || '-'}
+                          </span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-center">

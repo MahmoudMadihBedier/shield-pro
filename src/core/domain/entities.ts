@@ -21,6 +21,10 @@ export interface User extends BaseEntity {
   app_version?: string;
   platform?: string;
   last_seen_at?: string;
+  // Branch assignment — admin-only (enforced by a DB trigger, see
+  // branch_hierarchy_and_scoping migration). Drives RLS row-scoping: a user
+  // with no branch sees only rows they created themselves.
+  warehouse_id?: string | null;
 }
 
 export interface Role extends BaseEntity {
@@ -50,6 +54,21 @@ export interface Item extends BaseEntity {
   barcode?: string;
   carton_barcode?: string;
   carton_pack_size?: number;
+  // Computed client-side (sum of stock_movements) by InventoryService/
+  // DashboardService's low-stock queries, never a real column — never send on a write.
+  currentStock?: number;
+  // Commercial fields: default_price is the selling price; discount_percent
+  // is the standard discount applied at point of sale; cost_price feeds
+  // profit-margin reporting; production_line_id attributes finished goods to
+  // a line for qty-sold-by-line analytics.
+  discount_percent?: number;
+  cost_price?: number | null;
+  production_line_id?: string | null;
+}
+
+export interface ProductionLine extends BaseEntity {
+  name: string;
+  is_active: boolean;
 }
 
 export interface Unit extends BaseEntity {
@@ -66,6 +85,12 @@ export interface Warehouse extends BaseEntity {
   name: string;
   location?: string;
   is_active: boolean;
+  // 'main' — exactly one may exist, enforced by a partial unique index.
+  // 'branch' — a sub-warehouse; parent_warehouse_id is informational only
+  // (RLS scoping uses users.warehouse_id / customers.warehouse_id directly,
+  // not the parent link).
+  type: 'main' | 'branch';
+  parent_warehouse_id?: string | null;
 }
 
 export interface StockMovement extends BaseEntity {
@@ -82,7 +107,9 @@ export interface StockMovement extends BaseEntity {
     | 'purchase_return_out'
     | 'manual_adjustment'
     | 'transfer_out'
-    | 'transfer_in';
+    | 'transfer_in'
+    | 'rep_issue'
+    | 'rep_return';
   ref_table?: string;
   ref_id?: string;
   moved_at?: string;
@@ -105,14 +132,25 @@ export interface Customer extends BaseEntity {
   credit_status?: string;
   user_id?: string;
   crm_credentials?: { tempPassword: string };
+  // Branch assignment — admin-only (enforced by a DB trigger). A rep-created
+  // customer is left unassigned (null) until an admin approves/assigns it;
+  // an admin-created customer can be assigned directly.
+  warehouse_id?: string | null;
+  // 'approved' by default (admin-created customers, and all pre-existing
+  // rows). Set to 'pending' by SalesService.createCustomer specifically when
+  // the actor is a sales rep, not an admin.
+  approval_status?: 'approved' | 'pending';
+  lat?: number | null;
+  lng?: number | null;
 }
 
 export interface SalesInvoice extends BaseEntity {
   invoice_no: string;
   customer_id: string;
-  // Not a column on public.sales_invoices — the warehouse only matters for
-  // the stock_movement rows created alongside the invoice, never stored on
-  // the invoice itself.
+  // The branch this invoice was sold from — required (NOT NULL), drives RLS
+  // row-scoping the same way warehouse_id does on customers/users. Also used
+  // for the stock_movement rows created alongside the invoice.
+  warehouse_id: string;
   date: string;
   payment_method: 'cash' | 'credit' | 'bank';
   status: 'unpaid' | 'partially_paid' | 'paid' | 'cancelled';
@@ -121,6 +159,10 @@ export interface SalesInvoice extends BaseEntity {
   tax: number;
   total: number;
   notes?: string;
+  // Captured from the rep's device at the moment of sale (browser
+  // geolocation) — nullable, since not every sale is field/rep-driven.
+  lat?: number | null;
+  lng?: number | null;
 }
 
 export interface SalesInvoiceLine extends BaseEntity {
@@ -193,6 +235,23 @@ export interface AccountTransaction extends BaseEntity {
   ref_table?: string;
   ref_id?: string;
   date: string;
+  // Nullable — head-office/company-level transactions (capital, some
+  // expenses) stay unscoped; branch-driven ones (sales) are tagged so a
+  // branch accountant's view can filter to just their own branch.
+  warehouse_id?: string | null;
+}
+
+// Generic cash movement independent of a specific customer/supplier invoice
+// — daily disbursements/receipts with a free-text reason (petty cash, misc
+// income, owner drawings, etc.), the gap ReceiptVoucher/PaymentVoucher (both
+// tied to a specific AR/AP document) don't cover.
+export interface CashVoucher extends BaseEntity {
+  voucher_type: 'receipt' | 'disbursement';
+  amount: number;
+  account_id: string;
+  warehouse_id?: string | null;
+  reason: string;
+  date: string;
 }
 
 export interface ReceiptVoucher extends BaseEntity {
@@ -235,12 +294,34 @@ export interface ProductionBatch extends BaseEntity {
   expiry_date?: string | null;
   status: 'draft' | 'confirmed' | 'completed';
   produced_at?: string;
+  // Set when this batch originated from an approved ProductionRequest — its
+  // raw materials were already withdrawn at request-approval time, so
+  // completeBatch must not post a second consumption deduction for them.
+  production_request_id?: string | null;
 }
 
 export interface ProductionConsumption extends BaseEntity {
   batch_id: string;
   raw_item_id: string;
   qty_consumed: number;
+}
+
+// A factory employee requests production of an already-defined product; the
+// purchasing warehouse manager reviews and either withdraws the required raw
+// materials (approving) or rejects it. Only once approved can the actual
+// ProductionBatch be created. Segregation of duties (requester != approver)
+// enforced server-side by enforce_production_request_segregation_of_duties.
+export interface ProductionRequest extends BaseEntity {
+  item_id: string;
+  requested_qty: number;
+  requested_by: string;
+  raw_material_warehouse_id: string;
+  status: 'pending_materials' | 'materials_approved' | 'rejected' | 'in_production' | 'completed';
+  material_approved_by?: string | null;
+  material_approved_at?: string | null;
+  rejection_reason?: string | null;
+  production_batch_id?: string | null;
+  notes?: string;
 }
 
 // HR Entities
@@ -392,6 +473,87 @@ export interface ClientNotification extends BaseEntity {
   data?: any;
   read: boolean;
   read_at?: string;
+}
+
+// Main-warehouse-manager-initiated, admin-approved stock distribution to a
+// branch. Segregation of duties enforced server-side: requester != approver,
+// sender != receiver.
+export interface DistributionOrder extends BaseEntity {
+  order_no: string;
+  from_warehouse_id: string;
+  to_warehouse_id: string;
+  requested_by: string;
+  status:
+    | 'pending_approval'
+    | 'approved'
+    | 'rejected'
+    | 'in_transit'
+    | 'received_matched'
+    | 'received_discrepancy'
+    | 'discrepancy_resolved';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+  shipped_at?: string | null;
+  received_by?: string | null;
+  received_at?: string | null;
+  discrepancy_notes?: string | null;
+  discrepancy_resolved_by?: string | null;
+  discrepancy_resolved_at?: string | null;
+  notes?: string;
+}
+
+export interface DistributionOrderLine extends BaseEntity {
+  order_id: string;
+  item_id: string;
+  requested_qty: number;
+  received_qty?: number | null;
+}
+
+// Rep stock/cash-in-hand ledger + daily close-out (Phase 2.4 — the highest
+// fraud-prevention-value control per the business docs: every rep is a mini
+// warehouse and mini cash register with a running balance that must
+// reconcile to zero, or be explained, at day's end).
+export interface RepStockLedger extends BaseEntity {
+  rep_user_id: string;
+  item_id: string;
+  warehouse_id: string;
+  // Positive = issued to the rep, negative = sold/returned/adjusted out.
+  qty: number;
+  movement_type: 'issued' | 'sold' | 'returned' | 'adjustment';
+  ref_table?: string;
+  ref_id?: string;
+  closeout_session_id?: string | null;
+  moved_at?: string;
+}
+
+export interface RepCashLedger extends BaseEntity {
+  rep_user_id: string;
+  // Positive = collected from a customer, negative = handed in to the branch.
+  amount: number;
+  payment_type: 'cash' | 'bank';
+  ref_table?: string;
+  ref_id?: string;
+  closeout_session_id?: string | null;
+  moved_at?: string;
+}
+
+export interface RepCloseoutSession extends BaseEntity {
+  rep_user_id: string;
+  warehouse_id: string;
+  session_date: string;
+  status: 'open' | 'submitted' | 'confirmed' | 'variance_flagged';
+  expected_cash: number;
+  actual_cash_counted?: number | null;
+  cash_variance?: number | null;
+  stock_variance?: { [itemId: string]: { expected: number; counted: number; diff: number } } | null;
+  notes?: string;
+  submitted_at?: string | null;
+  submitted_by?: string | null;
+  // Segregation of duties: confirmed_by must never equal rep_user_id —
+  // enforced server-side by enforce_closeout_segregation_of_duties trigger.
+  confirmed_at?: string | null;
+  confirmed_by?: string | null;
 }
 
 export interface ClientFinancialSummary extends BaseEntity {

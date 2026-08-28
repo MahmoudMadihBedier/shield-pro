@@ -4,11 +4,11 @@ import {
   Customer, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine,
   Supplier, PurchaseInvoice, PurchaseInvoiceLine,
   Account, AccountTransaction, ReceiptVoucher, PaymentVoucher,
-  ItemRecipe, ProductionBatch, ProductionConsumption,
+  ItemRecipe, ProductionBatch, ProductionConsumption, ProductionRequest,
   Employee, Attendance, PayrollRun,
   Setting
 } from '../domain/entities';
-import { PaginationParams, PaginatedResult, EntityFilter } from '../types';
+import { PaginationParams, PaginatedResult, EntityFilter, CustomerStatementEntry, ProfitLoss } from '../types';
 
 // Authentication Service
 export interface IAuthService {
@@ -38,15 +38,16 @@ export interface IInventoryService {
 export interface ISalesService {
   getCustomers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Customer>>;
   createCustomer(customer: Omit<Customer, 'id' | 'created_at' | 'updated_at'>): Promise<Customer>;
+  approveCustomer(customerId: string, warehouseId: string): Promise<Customer>;
   getInvoices(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<SalesInvoice>>;
-  createInvoice(invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>, lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[], warehouseId: string): Promise<SalesInvoice>;
+  createInvoice(invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at' | 'warehouse_id'>, lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[], warehouseId: string, repIssuance?: { repUserId: string }): Promise<SalesInvoice>;
   updateInvoice(id: string, invoice: Partial<SalesInvoice>): Promise<SalesInvoice>;
   deleteInvoice(id: string): Promise<void>;
   getInvoiceLines(invoiceId: string): Promise<SalesInvoiceLine[]>;
   createSalesReturn(returnData: Omit<SalesReturn, 'id' | 'created_at' | 'updated_at'>, lines: Omit<SalesReturnLine, 'id' | 'created_at' | 'updated_at'>[]): Promise<SalesReturn>;
   getReceiptVouchers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ReceiptVoucher>>;
   createReceiptVoucher(voucher: Omit<ReceiptVoucher, 'id' | 'created_at' | 'updated_at'>): Promise<ReceiptVoucher>;
-  getCustomerStatement(customerId: string, startDate: string, endDate: string): Promise<any[]>;
+  getCustomerStatement(customerId: string, startDate: string, endDate: string): Promise<CustomerStatementEntry[]>;
 }
 
 // Purchase Service
@@ -70,7 +71,7 @@ export interface IAccountingService {
   getTransactions(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<AccountTransaction>>;
   createTransaction(transaction: Omit<AccountTransaction, 'id' | 'created_at' | 'updated_at'>): Promise<AccountTransaction>;
   getCashBankBalance(): Promise<number>;
-  getProfitLoss(startDate: string, endDate: string): Promise<any>;
+  getProfitLoss(startDate: string, endDate: string): Promise<ProfitLoss>;
 }
 
 // Manufacturing Service
@@ -82,6 +83,11 @@ export interface IManufacturingService {
   updateBatch(id: string, batch: Partial<ProductionBatch>): Promise<ProductionBatch>;
   completeBatch(id: string, actualQty: number, actualWastePct: number, warehouseId: string): Promise<ProductionBatch>;
   getBatchConsumptions(batchId: string): Promise<ProductionConsumption[]>;
+  createProductionRequest(itemId: string, requestedQty: number, requestedBy: string, rawMaterialWarehouseId: string, notes?: string): Promise<ProductionRequest>;
+  getProductionRequests(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionRequest>>;
+  approveProductionRequestMaterials(requestId: string, approvedBy: string): Promise<ProductionRequest>;
+  rejectProductionRequest(requestId: string, rejectedBy: string, reason: string): Promise<ProductionRequest>;
+  startProductionFromRequest(requestId: string, plannedQty: number): Promise<ProductionBatch>;
 }
 
 // HR Service

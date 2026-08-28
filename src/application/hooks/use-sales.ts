@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Customer, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine, ReceiptVoucher } from '../../core/domain/entities';
-import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/types';
+import { PaginationParams, PaginatedResult, EntityFilter, CustomerStatementEntry } from '../../core/types';
 import { ServiceFactory } from '../services/service-factory';
 
 export function useCustomers(filter?: EntityFilter, params?: PaginationParams) {
@@ -42,12 +42,28 @@ export function useCustomers(filter?: EntityFilter, params?: PaginationParams) {
     }
   }, [salesService, loadCustomers]);
 
+  const approveCustomer = useCallback(async (customerId: string, warehouseId: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const updated = await salesService.approveCustomer(customerId, warehouseId);
+      await loadCustomers();
+      return updated;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to approve customer');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [salesService, loadCustomers]);
+
   return {
     customers,
     loading,
     error,
     loadCustomers,
-    createCustomer
+    createCustomer,
+    approveCustomer
   };
 }
 
@@ -76,14 +92,15 @@ export function useSalesInvoices(filter?: EntityFilter, params?: PaginationParam
   }, [loadInvoices]);
 
   const createInvoice = useCallback(async (
-    invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at'>,
+    invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at' | 'warehouse_id'>,
     lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
-    warehouseId: string
+    warehouseId: string,
+    repIssuance?: { repUserId: string }
   ) => {
     setLoading(true);
     setError(null);
     try {
-      const newInvoice = await salesService.createInvoice(invoice, lines, warehouseId);
+      const newInvoice = await salesService.createInvoice(invoice, lines, warehouseId, repIssuance);
       await loadInvoices();
       return newInvoice;
     } catch (err) {
@@ -211,7 +228,7 @@ export function useReceiptVouchers(filter?: EntityFilter, params?: PaginationPar
 // useInventory exposes calculateStock as a plain on-demand callback rather
 // than state driven by a useEffect.
 export function useCustomerStatement() {
-  const [statement, setStatement] = useState<any[]>([]);
+  const [statement, setStatement] = useState<CustomerStatementEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
