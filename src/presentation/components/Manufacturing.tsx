@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../infrastructure/database/dexie';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { getSetting } from '../../shared/utils/settings-helper';
+import { ProductionRequests } from './ProductionRequests';
 import {
   Settings,
   Plus,
@@ -9,12 +10,13 @@ import {
   CheckCircle,
   TrendingDown,
   Info,
-  Layers
+  Layers,
+  ClipboardList
 } from 'lucide-react';
 
 export const Manufacturing: React.FC = () => {
   // Navigation tabs
-  const [activeSubTab, setActiveSubTab] = useState<'recipes' | 'production' | 'filling'>('recipes');
+  const [activeSubTab, setActiveSubTab] = useState<'recipes' | 'requests' | 'production' | 'filling'>('recipes');
 
   // Master lists
   const [items, setItems] = useState<any[]>([]);
@@ -390,6 +392,15 @@ export const Manufacturing: React.FC = () => {
           <span>تركيبات وجداول المواد (Recipe/BOM)</span>
         </button>
         <button
+          onClick={() => setActiveSubTab('requests')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeSubTab === 'requests' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <ClipboardList className="h-4 w-4" />
+          <span>طلبات الإنتاج</span>
+        </button>
+        <button
           onClick={() => setActiveSubTab('production')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
             activeSubTab === 'production' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
@@ -408,6 +419,8 @@ export const Manufacturing: React.FC = () => {
           <span>التعبئة والتغليف والمنتج النهائي</span>
         </button>
       </div>
+
+      {activeSubTab === 'requests' && <ProductionRequests />}
 
       {activeSubTab === 'recipes' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

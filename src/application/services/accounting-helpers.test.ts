@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // vi.mock is hoisted above this file's imports/consts, so the mock fn itself
 // has to be created inside vi.hoisted() to survive the hoist.
 const { queueOfflineWrite } = vi.hoisted(() => ({
-  queueOfflineWrite: vi.fn().mockResolvedValue(undefined),
+  queueOfflineWrite: vi.fn().mockResolvedValue({ success: true }),
 }));
 vi.mock('../../infrastructure/sync/sync-service', () => ({ queueOfflineWrite }));
 
@@ -64,5 +64,38 @@ describe('postDoubleEntry', () => {
     const today = new Date().toISOString().split('T')[0];
     const [, , , debitData] = queueOfflineWrite.mock.calls[0];
     expect(debitData.date).toBe(today);
+  });
+
+  it('throws instead of silently succeeding when the debit leg fails to queue', async () => {
+    queueOfflineWrite.mockResolvedValueOnce({ success: false, error: 'offline write failed' });
+
+    await expect(
+      postDoubleEntry({
+        refTable: 'sales_invoices',
+        refId: 'inv-2',
+        debitAccountId: 'cash-acc',
+        creditAccountId: 'revenue-acc',
+        amount: 50,
+      })
+    ).rejects.toThrow(/offline write failed/);
+
+    // The credit leg must never be attempted once the debit leg has failed.
+    expect(queueOfflineWrite).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws and flags the orphaned debit when only the credit leg fails to queue', async () => {
+    queueOfflineWrite
+      .mockResolvedValueOnce({ success: true })
+      .mockResolvedValueOnce({ success: false, error: 'offline write failed' });
+
+    await expect(
+      postDoubleEntry({
+        refTable: 'sales_invoices',
+        refId: 'inv-3',
+        debitAccountId: 'cash-acc',
+        creditAccountId: 'revenue-acc',
+        amount: 75,
+      })
+    ).rejects.toThrow(/بدون القيد الدائن المقابل/);
   });
 });

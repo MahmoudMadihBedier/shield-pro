@@ -28,7 +28,8 @@ import {
   Bell,
   Smartphone,
   MapPin,
-  FileText
+  FileText,
+  Wallet
 } from 'lucide-react';
 
 const Settings = lazy(() => import('./presentation/components/Settings').then(m => ({ default: m.Settings })));
@@ -42,6 +43,8 @@ const Tasks = lazy(() => import('./presentation/components/Tasks').then(m => ({ 
 const Reports = lazy(() => import('./presentation/components/Reports').then(m => ({ default: m.Reports })));
 const UsersDevices = lazy(() => import('./presentation/components/UsersDevices').then(m => ({ default: m.UsersDevices })));
 const RepTracking = lazy(() => import('./presentation/components/RepTracking').then(m => ({ default: m.RepTracking })));
+const RepLedger = lazy(() => import('./presentation/components/RepLedger').then(m => ({ default: m.RepLedger })));
+const DistributionOrders = lazy(() => import('./presentation/components/DistributionOrders').then(m => ({ default: m.DistributionOrders })));
 const Dashboard = lazy(() => import('./presentation/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 
 const ModuleLoadingFallback = () => (
@@ -322,6 +325,34 @@ function ERPAppContent() {
             </motion.button>
           )}
 
+          {checkPermission('sales', 'view') && (
+            <motion.button
+              onClick={() => setActiveTab('rep_ledger')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'rep_ledger' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <Wallet className="h-5 w-5" />
+              <span>عهدة المندوبين</span>
+            </motion.button>
+          )}
+
+          {checkPermission('inventory', 'view') && (
+            <motion.button
+              onClick={() => setActiveTab('distribution')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'distribution' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <Package className="h-5 w-5" />
+              <span>توزيع الفروع</span>
+            </motion.button>
+          )}
+
           {checkPermission('settings', 'view') && (
             <motion.button
               onClick={() => setActiveTab('settings')}
@@ -558,6 +589,28 @@ function ERPAppContent() {
                   transition={{ duration: 0.2 }}
                 >
                   <RepTracking />
+                </motion.div>
+              )}
+              {activeTab === 'rep_ledger' && (
+                <motion.div
+                  key="rep_ledger"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <RepLedger />
+                </motion.div>
+              )}
+              {activeTab === 'distribution' && (
+                <motion.div
+                  key="distribution"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <DistributionOrders />
                 </motion.div>
               )}
               {activeTab === 'settings' && (

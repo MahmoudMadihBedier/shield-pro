@@ -78,7 +78,7 @@ export class DashboardService implements IDashboardService {
     for (const item of items.data) {
       const stock = await this.stockMovementRepository.calculateStock(item.id);
       if (stock <= item.reorder_level) {
-        lowStockItems.push({ ...item, currentStock: stock } as any);
+        lowStockItems.push({ ...item, currentStock: stock });
       }
     }
 

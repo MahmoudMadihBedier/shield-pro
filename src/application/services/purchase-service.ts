@@ -65,35 +65,33 @@ export class PurchaseService implements IPurchaseService {
     // purchase).
     const cogsAcc = (await this.accountRepository.findByCategory('cogs'))[0]?.id;
     if (!cogsAcc) {
-      console.warn('COGS account not found, skipping journal entry for purchase invoice:', newInvoice.id);
+      throw new Error(`تعذر تسجيل القيد المحاسبي لفاتورة الشراء ${newInvoice.invoice_no}: حساب تكلفة البضاعة المباعة (COGS) غير موجود`);
     } else if (newInvoice.payment_method === 'cash') {
       const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
       if (!cashAcc) {
-        console.warn('Cash account not found, skipping journal entry for purchase invoice:', newInvoice.id);
-      } else {
-        await postDoubleEntry({
-          refTable: 'purchase_invoices',
-          refId: newInvoice.id,
-          debitAccountId: cogsAcc,
-          creditAccountId: cashAcc,
-          amount: newInvoice.total,
-          date: newInvoice.date
-        });
+        throw new Error(`تعذر تسجيل القيد المحاسبي لفاتورة الشراء ${newInvoice.invoice_no}: حساب النقدية غير موجود`);
       }
+      await postDoubleEntry({
+        refTable: 'purchase_invoices',
+        refId: newInvoice.id,
+        debitAccountId: cogsAcc,
+        creditAccountId: cashAcc,
+        amount: newInvoice.total,
+        date: newInvoice.date
+      });
     } else if (newInvoice.payment_method === 'credit') {
       const apAcc = (await this.accountRepository.findByCategory('ap'))[0]?.id;
       if (!apAcc) {
-        console.warn('Accounts payable account not found, skipping journal entry for purchase invoice:', newInvoice.id);
-      } else {
-        await postDoubleEntry({
-          refTable: 'purchase_invoices',
-          refId: newInvoice.id,
-          debitAccountId: cogsAcc,
-          creditAccountId: apAcc,
-          amount: newInvoice.total,
-          date: newInvoice.date
-        });
+        throw new Error(`تعذر تسجيل القيد المحاسبي لفاتورة الشراء ${newInvoice.invoice_no}: حساب الموردين الدائنين غير موجود`);
       }
+      await postDoubleEntry({
+        refTable: 'purchase_invoices',
+        refId: newInvoice.id,
+        debitAccountId: cogsAcc,
+        creditAccountId: apAcc,
+        amount: newInvoice.total,
+        date: newInvoice.date
+      });
     }
 
     return newInvoice;
@@ -142,17 +140,16 @@ export class PurchaseService implements IPurchaseService {
     // voucher's account).
     const apAcc = (await this.accountRepository.findByCategory('ap'))[0]?.id;
     if (!apAcc) {
-      console.warn('Accounts payable account not found, skipping journal entry for payment voucher:', newVoucher.id);
-    } else {
-      await postDoubleEntry({
-        refTable: 'payment_vouchers',
-        refId: newVoucher.id,
-        debitAccountId: apAcc,
-        creditAccountId: newVoucher.account_id,
-        amount: newVoucher.amount,
-        date: newVoucher.date
-      });
+      throw new Error(`تعذر تسجيل القيد المحاسبي لسند الصرف ${newVoucher.voucher_no}: حساب الموردين الدائنين غير موجود`);
     }
+    await postDoubleEntry({
+      refTable: 'payment_vouchers',
+      refId: newVoucher.id,
+      debitAccountId: apAcc,
+      creditAccountId: newVoucher.account_id,
+      amount: newVoucher.amount,
+      date: newVoucher.date
+    });
 
     return newVoucher;
   }

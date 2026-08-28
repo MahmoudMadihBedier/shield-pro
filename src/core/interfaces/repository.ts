@@ -11,7 +11,9 @@ import {
   ItemRecipe, ProductionBatch, ProductionConsumption,
   Employee, Attendance, PayrollRun,
   Setting, AuditLog, UserLocation,
-  Task, EmployeeReport, Bonus, Punishment
+  Task, EmployeeReport, Bonus, Punishment,
+  RepStockLedger, RepCashLedger, RepCloseoutSession, ProductionRequest,
+  DistributionOrder, DistributionOrderLine, CashVoucher
 } from '../domain/entities';
 
 // Base Repository Interface
@@ -56,6 +58,7 @@ export interface IUnitConversionRepository extends IRepository<UnitConversion> {
 
 export interface IWarehouseRepository extends IRepository<Warehouse> {
   findActive(): Promise<Warehouse[]>;
+  findMain(): Promise<Warehouse | undefined>;
 }
 
 export interface IStockMovementRepository extends IRepository<StockMovement> {
@@ -176,4 +179,39 @@ export interface IBonusRepository extends IRepository<Bonus> {
 
 export interface IPunishmentRepository extends IRepository<Punishment> {
   findByEmployeeId(employeeId: string): Promise<Punishment[]>;
+}
+
+export interface IRepStockLedgerRepository extends IRepository<RepStockLedger> {
+  findByRepId(repUserId: string): Promise<RepStockLedger[]>;
+  calculateBalance(repUserId: string, itemId: string): Promise<number>;
+  getRepBalances(repUserId: string): Promise<{ item_id: string; balance: number }[]>;
+}
+
+export interface IRepCashLedgerRepository extends IRepository<RepCashLedger> {
+  findByRepId(repUserId: string): Promise<RepCashLedger[]>;
+  calculateBalance(repUserId: string): Promise<number>;
+}
+
+export interface IRepCloseoutSessionRepository extends IRepository<RepCloseoutSession> {
+  findByRepId(repUserId: string): Promise<RepCloseoutSession[]>;
+  findOpenSession(repUserId: string, date: string): Promise<RepCloseoutSession | undefined>;
+}
+
+export interface IProductionRequestRepository extends IRepository<ProductionRequest> {
+  findByStatus(status: string): Promise<ProductionRequest[]>;
+  findByRequestedBy(userId: string): Promise<ProductionRequest[]>;
+}
+
+export interface IDistributionOrderRepository extends IRepository<DistributionOrder> {
+  findByStatus(status: string): Promise<DistributionOrder[]>;
+  findByWarehouse(warehouseId: string): Promise<DistributionOrder[]>;
+}
+
+export interface IDistributionOrderLineRepository extends IRepository<DistributionOrderLine> {
+  findByOrderId(orderId: string): Promise<DistributionOrderLine[]>;
+}
+
+export interface ICashVoucherRepository extends IRepository<CashVoucher> {
+  findByWarehouseId(warehouseId: string | null): Promise<CashVoucher[]>;
+  findByDateRange(startDate: string, endDate: string): Promise<CashVoucher[]>;
 }

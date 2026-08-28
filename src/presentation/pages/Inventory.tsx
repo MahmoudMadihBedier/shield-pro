@@ -22,6 +22,8 @@ export const Inventory: React.FC = () => {
   const [itemUomId, setItemUomId] = useState('');
   const [itemExpiryTracking, setItemExpiryTracking] = useState(false);
   const [itemDefaultPrice, setItemDefaultPrice] = useState('0');
+  const [itemDiscountPercent, setItemDiscountPercent] = useState('0');
+  const [itemCostPrice, setItemCostPrice] = useState('0');
   const [itemBarcode, setItemBarcode] = useState('');
   const [itemCartonBarcode, setItemCartonBarcode] = useState('');
   const [itemCartonPackSize, setItemCartonPackSize] = useState('20');
@@ -73,6 +75,8 @@ export const Inventory: React.FC = () => {
         uom_id: itemUomId,
         expiry_tracking_enabled: itemExpiryTracking,
         default_price: Number(itemDefaultPrice),
+        discount_percent: Number(itemDiscountPercent),
+        cost_price: itemCostPrice ? Number(itemCostPrice) : undefined,
         barcode: itemBarcode.trim() || undefined,
         carton_barcode: itemCartonBarcode.trim() || undefined,
         carton_pack_size: itemCartonBarcode.trim() ? Number(itemCartonPackSize) : undefined
@@ -91,6 +95,8 @@ export const Inventory: React.FC = () => {
       setItemReorderLevel('0');
       setItemExpiryTracking(false);
       setItemDefaultPrice('0');
+      setItemDiscountPercent('0');
+      setItemCostPrice('0');
       setItemBarcode('');
       setItemCartonBarcode('');
       setItemCartonPackSize('20');
@@ -323,6 +329,24 @@ export const Inventory: React.FC = () => {
                   type="number"
                   value={itemDefaultPrice}
                   onChange={(e) => setItemDefaultPrice(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">نسبة الخصم %</label>
+                <input
+                  type="number"
+                  value={itemDiscountPercent}
+                  onChange={(e) => setItemDiscountPercent(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">سعر التكلفة (لهامش الربح)</label>
+                <input
+                  type="number"
+                  value={itemCostPrice}
+                  onChange={(e) => setItemCostPrice(e.target.value)}
                   className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
                 />
               </div>

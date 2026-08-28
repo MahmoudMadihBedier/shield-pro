@@ -10,4 +10,8 @@ export class WarehouseRepository extends BaseRepository<Warehouse> implements IW
   async findActive(): Promise<Warehouse[]> {
     return await this.table.filter((warehouse: Warehouse) => warehouse.is_active).toArray();
   }
+
+  async findMain(): Promise<Warehouse | undefined> {
+    return await this.table.filter((warehouse: Warehouse) => warehouse.type === 'main').first();
+  }
 }

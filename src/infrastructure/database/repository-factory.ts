@@ -7,7 +7,10 @@ import {
   IItemRecipeRepository, IProductionBatchRepository, IProductionConsumptionRepository,
   IEmployeeRepository, IAttendanceRepository, IPayrollRunRepository,
   ISettingRepository, IAuditLogRepository, IUserLocationRepository,
-  ITaskRepository, IEmployeeReportRepository, IBonusRepository, IPunishmentRepository
+  ITaskRepository, IEmployeeReportRepository, IBonusRepository, IPunishmentRepository,
+  IRepStockLedgerRepository, IRepCashLedgerRepository, IRepCloseoutSessionRepository,
+  IProductionRequestRepository, IDistributionOrderRepository, IDistributionOrderLineRepository,
+  ICashVoucherRepository
 } from '../../core/interfaces/repository';
 
 import { BaseRepository } from './base-repository';
@@ -44,6 +47,13 @@ import { TaskRepository } from './repositories/task-repository';
 import { EmployeeReportRepository } from './repositories/employee-report-repository';
 import { BonusRepository } from './repositories/bonus-repository';
 import { PunishmentRepository } from './repositories/punishment-repository';
+import { RepStockLedgerRepository } from './repositories/rep-stock-ledger-repository';
+import { RepCashLedgerRepository } from './repositories/rep-cash-ledger-repository';
+import { RepCloseoutSessionRepository } from './repositories/rep-closeout-session-repository';
+import { ProductionRequestRepository } from './repositories/production-request-repository';
+import { DistributionOrderRepository } from './repositories/distribution-order-repository';
+import { DistributionOrderLineRepository } from './repositories/distribution-order-line-repository';
+import { CashVoucherRepository } from './repositories/cash-voucher-repository';
 import { IRepository } from '../../core/interfaces/repository';
 import { BaseEntity } from '../../core/domain/entities';
 
@@ -294,6 +304,55 @@ export class RepositoryFactory {
       instances.punishmentRepository = new PunishmentRepository();
     }
     return instances.punishmentRepository;
+  }
+
+  static getRepStockLedgerRepository(): IRepStockLedgerRepository {
+    if (!instances.repStockLedgerRepository) {
+      instances.repStockLedgerRepository = new RepStockLedgerRepository();
+    }
+    return instances.repStockLedgerRepository;
+  }
+
+  static getRepCashLedgerRepository(): IRepCashLedgerRepository {
+    if (!instances.repCashLedgerRepository) {
+      instances.repCashLedgerRepository = new RepCashLedgerRepository();
+    }
+    return instances.repCashLedgerRepository;
+  }
+
+  static getRepCloseoutSessionRepository(): IRepCloseoutSessionRepository {
+    if (!instances.repCloseoutSessionRepository) {
+      instances.repCloseoutSessionRepository = new RepCloseoutSessionRepository();
+    }
+    return instances.repCloseoutSessionRepository;
+  }
+
+  static getProductionRequestRepository(): IProductionRequestRepository {
+    if (!instances.productionRequestRepository) {
+      instances.productionRequestRepository = new ProductionRequestRepository();
+    }
+    return instances.productionRequestRepository;
+  }
+
+  static getDistributionOrderRepository(): IDistributionOrderRepository {
+    if (!instances.distributionOrderRepository) {
+      instances.distributionOrderRepository = new DistributionOrderRepository();
+    }
+    return instances.distributionOrderRepository;
+  }
+
+  static getDistributionOrderLineRepository(): IDistributionOrderLineRepository {
+    if (!instances.distributionOrderLineRepository) {
+      instances.distributionOrderLineRepository = new DistributionOrderLineRepository();
+    }
+    return instances.distributionOrderLineRepository;
+  }
+
+  static getCashVoucherRepository(): ICashVoucherRepository {
+    if (!instances.cashVoucherRepository) {
+      instances.cashVoucherRepository = new CashVoucherRepository();
+    }
+    return instances.cashVoucherRepository;
   }
 
   // Reset all instances (useful for testing)

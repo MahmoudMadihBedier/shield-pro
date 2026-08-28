@@ -8,6 +8,7 @@ const ONLINE_THRESHOLD_MS = 10 * 60 * 1000; // matches the 5-minute presence hea
 export const UsersDevices: React.FC = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [roles, setRoles] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -15,10 +16,11 @@ export const UsersDevices: React.FC = () => {
   }, []);
 
   const loadData = async () => {
-    const [listUsers, listRoles] = await Promise.all([db.users.toArray(), db.roles.toArray()]);
+    const [listUsers, listRoles, listWarehouses] = await Promise.all([db.users.toArray(), db.roles.toArray(), db.warehouses.toArray()]);
     listUsers.sort((a: any, b: any) => (b.last_seen_at || '').localeCompare(a.last_seen_at || ''));
     setUsers(listUsers);
     setRoles(listRoles);
+    setWarehouses(listWarehouses);
   };
 
   const isOnline = (user: any) => {
@@ -30,6 +32,20 @@ export const UsersDevices: React.FC = () => {
     setLoading(true);
     try {
       const updated = { ...user, role_id: roleId || null };
+      await queueOfflineWrite('users', 'update', user.id, updated);
+      await loadData();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Branch (warehouse) assignment — server-side (enforce_admin_only_user_fields
+  // trigger) rejects this write unless the actor holds settings:edit, so this
+  // control only makes sense on an admin-only screen like this one.
+  const handleWarehouseChange = async (user: any, warehouseId: string) => {
+    setLoading(true);
+    try {
+      const updated = { ...user, warehouse_id: warehouseId || null };
       await queueOfflineWrite('users', 'update', user.id, updated);
       await loadData();
     } finally {
@@ -57,6 +73,7 @@ export const UsersDevices: React.FC = () => {
               <th className="py-3 px-4 text-right font-medium text-gray-500">الاسم</th>
               <th className="py-3 px-4 text-right font-medium text-gray-500">البريد الإلكتروني</th>
               <th className="py-3 px-4 text-right font-medium text-gray-500">الدور</th>
+              <th className="py-3 px-4 text-right font-medium text-gray-500">الفرع</th>
               <th className="py-3 px-4 text-right font-medium text-gray-500">آخر ظهور</th>
               <th className="py-3 px-4 text-right font-medium text-gray-500">إصدار التطبيق</th>
               <th className="py-3 px-4 text-right font-medium text-gray-500">الجهاز</th>
@@ -91,6 +108,19 @@ export const UsersDevices: React.FC = () => {
                     ))}
                   </select>
                 </td>
+                <td className="py-3 px-4">
+                  <select
+                    value={u.warehouse_id || ''}
+                    disabled={loading || u.role_id === '88888888-8888-8888-8888-888888888888'}
+                    onChange={(e) => handleWarehouseChange(u, e.target.value)}
+                    className="rounded border border-gray-300 py-1 px-2 text-xs bg-white disabled:bg-gray-100"
+                  >
+                    <option value="">-- بدون فرع --</option>
+                    {warehouses.map((w: any) => (
+                      <option key={w.id} value={w.id}>{w.name}{w.type === 'main' ? ' (الرئيسي)' : ''}</option>
+                    ))}
+                  </select>
+                </td>
                 <td className="py-3 px-4 text-gray-600 text-xs whitespace-nowrap">
                   {u.last_seen_at ? new Date(u.last_seen_at).toLocaleString('ar-EG') : 'لم يسجل الدخول بعد'}
                 </td>
@@ -100,7 +130,7 @@ export const UsersDevices: React.FC = () => {
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-gray-400">
+                <td colSpan={8} className="py-6 text-center text-gray-400">
                   لا يوجد مستخدمون بعد.
                 </td>
               </tr>
