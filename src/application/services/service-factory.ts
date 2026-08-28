@@ -16,6 +16,8 @@ import { TaskService } from './task-service';
 import { RepLedgerService } from './rep-ledger-service';
 import { DistributionService } from './distribution-service';
 import { AnalyticsService } from './analytics-service';
+import { ApprovalRuleEngine } from './approval-rule-engine';
+import { FraudDetectionService } from './fraud-detection-service';
 
 // Singleton instances
 let instances: any = {};
@@ -103,6 +105,20 @@ export class ServiceFactory {
       instances.analyticsService = new AnalyticsService();
     }
     return instances.analyticsService;
+  }
+
+  static getApprovalRuleEngine(): ApprovalRuleEngine {
+    if (!instances.approvalRuleEngine) {
+      instances.approvalRuleEngine = new ApprovalRuleEngine();
+    }
+    return instances.approvalRuleEngine;
+  }
+
+  static getFraudDetectionService(): FraudDetectionService {
+    if (!instances.fraudDetectionService) {
+      instances.fraudDetectionService = new FraudDetectionService();
+    }
+    return instances.fraudDetectionService;
   }
 
   static getAuthService(): IAuthService {

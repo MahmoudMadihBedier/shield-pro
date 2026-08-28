@@ -45,6 +45,7 @@ const UsersDevices = lazy(() => import('./presentation/components/UsersDevices')
 const RepTracking = lazy(() => import('./presentation/components/RepTracking').then(m => ({ default: m.RepTracking })));
 const RepLedger = lazy(() => import('./presentation/components/RepLedger').then(m => ({ default: m.RepLedger })));
 const DistributionOrders = lazy(() => import('./presentation/components/DistributionOrders').then(m => ({ default: m.DistributionOrders })));
+const FraudAndApprovals = lazy(() => import('./presentation/components/FraudAndApprovals').then(m => ({ default: m.FraudAndApprovals })));
 const Dashboard = lazy(() => import('./presentation/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 
 const ModuleLoadingFallback = () => (
@@ -355,6 +356,20 @@ function ERPAppContent() {
 
           {checkPermission('settings', 'view') && (
             <motion.button
+              onClick={() => setActiveTab('fraud')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'fraud' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <ShieldAlert className="h-5 w-5" />
+              <span>الاستثناءات والاحتيال</span>
+            </motion.button>
+          )}
+
+          {checkPermission('settings', 'view') && (
+            <motion.button
               onClick={() => setActiveTab('settings')}
               whileHover={{ scale: 1.02, x: 4 }}
               whileTap={{ scale: 0.98 }}
@@ -611,6 +626,17 @@ function ERPAppContent() {
                   transition={{ duration: 0.2 }}
                 >
                   <DistributionOrders />
+                </motion.div>
+              )}
+              {activeTab === 'fraud' && (
+                <motion.div
+                  key="fraud"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <FraudAndApprovals />
                 </motion.div>
               )}
               {activeTab === 'settings' && (

@@ -1,6 +1,7 @@
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { RepCloseoutSession } from '../../core/domain/entities';
+import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 
 // Phase 2.4 of SHIELD_PRO_REFACTOR_MASTER_PLAN.md — every sales rep is
 // treated as a mini warehouse (stock-in-hand) and mini cash register
@@ -208,9 +209,7 @@ export class RepLedgerService {
   // the enforce_closeout_segregation_of_duties trigger — this call will be
   // rejected by the database if violated, not just by this check.
   async confirmCloseout(sessionId: string, confirmedBy: string, repUserId: string): Promise<RepCloseoutSession> {
-    if (confirmedBy === repUserId) {
-      throw new Error('لا يمكن للمندوب اعتماد جلسة الإغلاق الخاصة به بنفسه');
-    }
+    assertSegregationOfDuties({ requestedBy: repUserId, actingUserId: confirmedBy, action: 'اعتماد إغلاق اليوم' });
     const updated = await this.repCloseoutSessionRepository.update(sessionId, {
       status: 'confirmed',
       confirmed_at: new Date().toISOString(),

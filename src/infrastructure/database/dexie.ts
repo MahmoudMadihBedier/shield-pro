@@ -58,6 +58,12 @@ class ERPDatabase extends Dexie {
   distribution_order_lines!: Table<any, string>;
   production_lines!: Table<any, string>;
   cash_vouchers!: Table<any, string>;
+  approval_rules!: Table<any, string>;
+  approval_rule_log!: Table<any, string>;
+  fraud_flags!: Table<any, string>;
+  return_writeoff_requests!: Table<any, string>;
+  stock_count_sessions!: Table<any, string>;
+  stock_count_lines!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -143,6 +149,20 @@ class ERPDatabase extends Dexie {
     // v9: Generic cash vouchers (branch-scoped accounting)
     this.version(9).stores({
       cash_vouchers: 'id, warehouse_id, account_id, date'
+    });
+
+    // v10: Approval-tier rules engine + fraud detection flags
+    this.version(10).stores({
+      approval_rules: 'id, movement_type',
+      approval_rule_log: 'id, actor_id, movement_type',
+      fraud_flags: 'id, status, actor_id'
+    });
+
+    // v11: QC hold, returns/write-offs, physical stock count sessions
+    this.version(11).stores({
+      return_writeoff_requests: 'id, status, requested_by, item_id',
+      stock_count_sessions: 'id, warehouse_id, status',
+      stock_count_lines: 'id, session_id, item_id'
     });
   }
 }

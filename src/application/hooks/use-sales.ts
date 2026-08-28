@@ -57,13 +57,28 @@ export function useCustomers(filter?: EntityFilter, params?: PaginationParams) {
     }
   }, [salesService, loadCustomers]);
 
+  const setCustomerPortalPin = useCallback(async (customerId: string, pin: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      await salesService.setCustomerPortalPin(customerId, pin);
+      await loadCustomers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set portal PIN');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [salesService, loadCustomers]);
+
   return {
     customers,
     loading,
     error,
     loadCustomers,
     createCustomer,
-    approveCustomer
+    approveCustomer,
+    setCustomerPortalPin
   };
 }
 

@@ -106,12 +106,44 @@ export function useAttendance(filter?: EntityFilter, params?: PaginationParams) 
     }
   }, [hrService, loadAttendance]);
 
+  const clockIn = useCallback(async (employeeId: string, lat?: number | null, lng?: number | null) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const record = await hrService.clockIn(employeeId, lat, lng);
+      await loadAttendance();
+      return record;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clock in');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [hrService, loadAttendance]);
+
+  const clockOut = useCallback(async (employeeId: string, lat?: number | null, lng?: number | null) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const record = await hrService.clockOut(employeeId, lat, lng);
+      await loadAttendance();
+      return record;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clock out');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [hrService, loadAttendance]);
+
   return {
     attendance,
     loading,
     error,
     loadAttendance,
-    recordAttendance
+    recordAttendance,
+    clockIn,
+    clockOut
   };
 }
 

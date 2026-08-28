@@ -7,6 +7,7 @@ import { useToast } from './ui/Toast';
 import { Tasks } from './Tasks';
 import { db } from '../../infrastructure/database/dexie';
 import { User } from '../../core/domain/entities';
+import { useAuth } from '../../application/services/auth-service';
 import {
   Users,
   Clock,
@@ -22,6 +23,7 @@ const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
 
 export const HR: React.FC = () => {
   const { success, error, warning } = useToast();
+  const { profile } = useAuth();
 
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'employees' | 'attendance' | 'payroll' | 'tasks'>('employees');
@@ -31,9 +33,68 @@ export const HR: React.FC = () => {
   const employees = employeesResult.data;
   const [systemUsers, setSystemUsers] = useState<User[]>([]);
 
-  const { attendance: attendanceResult, recordAttendance } = useAttendance(undefined, UNPAGINATED);
+  const { attendance: attendanceResult, recordAttendance, clockIn, clockOut } = useAttendance(undefined, UNPAGINATED);
   const attendance = attendanceResult.data;
   const attendanceSorted = [...attendance].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // The logged-in user's own linked employee record, if any — drives the
+  // self clock-in/out card (only the employee themselves can use it,
+  // enforced server-side too by enforce_self_attendance).
+  const myEmployee = employees.find((e) => e.user_id === profile?.id);
+  const myTodayAttendance = attendance.find((a) => a.employee_id === myEmployee?.id && a.date === new Date().toISOString().split('T')[0]);
+  const isMasterAdmin = profile?.role_name === 'Master Admin';
+
+  const captureLocation = (): Promise<{ lat: number | null; lng: number | null }> =>
+    new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve({ lat: null, lng: null }); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve({ lat: null, lng: null }),
+        { timeout: 5000, maximumAge: 60000 }
+      );
+    });
+
+  const handleClockIn = async () => {
+    if (!myEmployee) return;
+    try {
+      const { lat, lng } = await captureLocation();
+      await clockIn(myEmployee.id, lat, lng);
+      success('تم تسجيل حضورك بنجاح');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تسجيل الحضور'));
+    }
+  };
+
+  const handleClockOut = async () => {
+    if (!myEmployee) return;
+    try {
+      const { lat, lng } = await captureLocation();
+      await clockOut(myEmployee.id, lat, lng);
+      success('تم تسجيل انصرافك بنجاح');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تسجيل الانصراف'));
+    }
+  };
+
+  const handlePrintPayroll = () => {
+    const runsForMonth = payrollRuns.filter((pr) => pr.month === payrollMonth);
+    const rows = runsForMonth.map((pr) => {
+      const emp = employees.find((e) => e.id === pr.employee_id);
+      return `<tr><td>${emp?.name || pr.employee_id}</td><td>${emp?.role || ''}</td><td>${pr.base}</td><td>${pr.bonuses_total || 0}</td><td>${pr.punishments_total || 0}</td><td>${pr.net_pay}</td></tr>`;
+    }).join('');
+    const win = window.open('', '_blank', 'width=700,height=800');
+    if (!win) return;
+    win.document.write(`
+      <html dir="rtl"><head><title>مسير رواتب ${payrollMonth}</title>
+      <style>body{font-family:sans-serif;padding:16px}table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #ddd;text-align:right}</style>
+      </head><body>
+      <h2>مسير رواتب شهر ${payrollMonth}</h2>
+      <table><thead><tr><th>الموظف</th><th>الوظيفة</th><th>الأساسي</th><th>المكافآت</th><th>الخصومات (عقوبات)</th><th>الصافي</th></tr></thead><tbody>${rows}</tbody></table>
+      <script>window.print()</script>
+      </body></html>
+    `);
+    win.document.close();
+  };
 
   const { payrollRuns: payrollRunsResult, createPayrollRun } = usePayrollRuns(undefined, UNPAGINATED);
   const payrollRuns = payrollRunsResult.data;
@@ -342,6 +403,28 @@ export const HR: React.FC = () => {
 
       {activeSubTab === 'attendance' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {myEmployee && (
+            <div className="bg-blue-50 p-5 rounded-lg border border-blue-200 shadow h-fit lg:col-span-3">
+              <h3 className="font-bold text-blue-900 mb-2">تسجيل حضوري / انصرافي</h3>
+              <p className="text-xs text-blue-700 mb-3">تسجيل ذاتي مرتبط بموقعك الجغرافي — لا يمكن لأحد آخر تسجيل الحضور نيابة عنك.</p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleClockIn}
+                  disabled={!!myTodayAttendance?.check_in}
+                  className="bg-green-600 text-white text-sm px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+                >
+                  {myTodayAttendance?.check_in ? `تم الحضور (${myTodayAttendance.check_in})` : 'تسجيل حضور'}
+                </button>
+                <button
+                  onClick={handleClockOut}
+                  disabled={!myTodayAttendance?.check_in || !!myTodayAttendance?.check_out}
+                  className="bg-red-600 text-white text-sm px-4 py-2 rounded hover:bg-red-700 disabled:opacity-50"
+                >
+                  {myTodayAttendance?.check_out ? `تم الانصراف (${myTodayAttendance.check_out})` : 'تسجيل انصراف'}
+                </button>
+              </div>
+            </div>
+          )}
           {/* Create attendance */}
           <div className="bg-white p-5 rounded-lg border shadow h-fit">
             <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">ساعة الحضور اليومية (Time Clock)</h3>
@@ -467,6 +550,16 @@ export const HR: React.FC = () => {
               >
                 ترحيل رواتب الشهر المستهدف
               </button>
+
+              {isMasterAdmin && (
+                <button
+                  onClick={handlePrintPayroll}
+                  title="طباعة الرواتب — صلاحية حصرية لمدير النظام"
+                  className="py-2 px-5 bg-gray-800 hover:bg-gray-900 text-white rounded font-bold text-xs transition"
+                >
+                  طباعة رواتب الشهر
+                </button>
+              )}
             </div>
           </div>
 

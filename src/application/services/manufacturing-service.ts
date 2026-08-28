@@ -4,6 +4,7 @@ import { PaginationParams, PaginatedResult, EntityFilter } from '../../core/type
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { getSetting } from '../../shared/utils/settings-helper';
+import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 
 export class ManufacturingService implements IManufacturingService {
   private itemRecipeRepository = RepositoryFactory.getItemRecipeRepository();
@@ -40,9 +41,7 @@ export class ManufacturingService implements IManufacturingService {
   async approveProductionRequestMaterials(requestId: string, approvedBy: string): Promise<ProductionRequest> {
     const request = await this.productionRequestRepository.findById(requestId);
     if (!request) throw new Error('طلب الإنتاج غير موجود');
-    if (request.requested_by === approvedBy) {
-      throw new Error('لا يمكن لطالب الإنتاج اعتماد طلبه بنفسه');
-    }
+    assertSegregationOfDuties({ requestedBy: request.requested_by, actingUserId: approvedBy, action: 'اعتماد وصرف الخامات' });
 
     const recipes = await this.itemRecipeRepository.findByParentItemId(request.item_id);
     const bomComponents = recipes.filter((r) => r.recipe_type === 'batch');
@@ -165,18 +164,16 @@ export class ManufacturingService implements IManufacturingService {
     return updatedBatch;
   }
 
-  // Mirrors Manufacturing.tsx's original confirmProductionBatch, with two
-  // additions per the production-request workflow: (1) if this batch
-  // originated from an approved ProductionRequest, its raw materials were
-  // already withdrawn at approval time — posting a second consumption
-  // deduction here would double-count it, so that step is skipped; (2) the
-  // produced quantity is auto-routed to the MAIN warehouse (not the
-  // operator-picked warehouseId — see Story: "Based on the percentage
-  // entered by the system administrator... automatically stored in the main
-  // warehouse"), scaled by the admin-configurable main_warehouse_auto_stock_pct
-  // setting. warehouseId is still used for the raw-material consumption
-  // deduction when it applies (that's a different physical location — the
-  // production line — than the main finished-goods warehouse).
+  // Mirrors Manufacturing.tsx's original confirmProductionBatch, with three
+  // additions: (1) if this batch originated from an approved
+  // ProductionRequest, its raw materials were already withdrawn at approval
+  // time — posting a second consumption deduction here would double-count
+  // it, so that step is skipped; (2) output does NOT become sellable stock
+  // yet — status goes to 'pending_qc', not 'completed' (Phase 2.7: a bad
+  // batch must be caught before reaching a customer) — see releaseBatchQC
+  // for the step that actually posts the output movement; (3) once
+  // released, the produced quantity is auto-routed to the MAIN warehouse,
+  // scaled by the admin-configurable main_warehouse_auto_stock_pct setting.
   async completeBatch(id: string, actualQty: number, actualWastePct: number, warehouseId: string): Promise<ProductionBatch> {
     const batch = await this.productionBatchRepository.findById(id);
     if (!batch) {
@@ -184,7 +181,7 @@ export class ManufacturingService implements IManufacturingService {
     }
 
     const updatedBatch = await this.productionBatchRepository.update(id, {
-      status: 'completed',
+      status: 'pending_qc',
       actual_qty: actualQty,
       actual_waste_pct: actualWastePct,
       produced_at: new Date().toISOString()
@@ -208,10 +205,36 @@ export class ManufacturingService implements IManufacturingService {
       }
     }
 
+    return updatedBatch;
+  }
+
+  // QC release/reject — the batch producer cannot release/reject their own
+  // batch (segregation of duties, enforced server-side too). Only on
+  // release does the produced quantity actually become stock, auto-routed
+  // to the main warehouse per main_warehouse_auto_stock_pct. Rejecting
+  // leaves the batch with no stock impact at all — the bad batch never
+  // reaches inventory.
+  async releaseBatchQC(batchId: string, releasedBy: string, approve: boolean, warehouseIdFallback: string, rejectionReason?: string): Promise<ProductionBatch> {
+    const batch = await this.productionBatchRepository.findById(batchId);
+    if (!batch) throw new Error('Production batch not found');
+    if (batch.status !== 'pending_qc') throw new Error('هذه الدفعة ليست بانتظار فحص الجودة');
+    assertSegregationOfDuties({ requestedBy: batch.created_by, actingUserId: releasedBy, action: 'اعتماد/رفض فحص الجودة' });
+
+    if (!approve) {
+      const rejected = await this.productionBatchRepository.update(batchId, {
+        status: 'rejected',
+        qc_released_by: releasedBy,
+        qc_released_at: new Date().toISOString(),
+        qc_rejection_reason: rejectionReason
+      });
+      await queueOfflineWrite('production_batches', 'update', batchId, rejected);
+      return rejected;
+    }
+
     const mainWarehouse = await this.warehouseRepository.findMain();
-    const outputWarehouseId = mainWarehouse?.id || warehouseId;
+    const outputWarehouseId = mainWarehouse?.id || warehouseIdFallback;
     const autoStockPct = Number(await getSetting('main_warehouse_auto_stock_pct', '100'));
-    const creditedQty = actualQty * (autoStockPct / 100);
+    const creditedQty = Number(batch.actual_qty || 0) * (autoStockPct / 100);
 
     const outputMovement = await this.stockMovementRepository.create({
       item_id: batch.item_id,
@@ -225,6 +248,13 @@ export class ManufacturingService implements IManufacturingService {
     });
     await queueOfflineWrite('stock_movements', 'insert', outputMovement.id, outputMovement);
 
+    const released = await this.productionBatchRepository.update(batchId, {
+      status: 'released',
+      qc_released_by: releasedBy,
+      qc_released_at: new Date().toISOString()
+    });
+    await queueOfflineWrite('production_batches', 'update', batchId, released);
+
     if (batch.production_request_id) {
       const req = await this.productionRequestRepository.findById(batch.production_request_id);
       if (req) {
@@ -233,7 +263,7 @@ export class ManufacturingService implements IManufacturingService {
       }
     }
 
-    return updatedBatch;
+    return released;
   }
 
   async getBatchConsumptions(batchId: string): Promise<ProductionConsumption[]> {

@@ -284,7 +284,18 @@ export const Accounting: React.FC = () => {
           <DollarSign className="h-4 w-4" />
           <span>قيود دفتر اليومية التفصيلية</span>
         </button>
+        <button
+          onClick={() => setActiveSubTab('vouchers')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeSubTab === 'vouchers' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Wallet className="h-4 w-4" />
+          <span>سندات القبض والصرف العامة</span>
+        </button>
       </div>
+
+      {activeSubTab === 'vouchers' && <CashVouchers />}
 
       {activeSubTab === 'liquidity' && (
         <div className="space-y-6">

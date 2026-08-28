@@ -10,7 +10,8 @@ import {
   ITaskRepository, IEmployeeReportRepository, IBonusRepository, IPunishmentRepository,
   IRepStockLedgerRepository, IRepCashLedgerRepository, IRepCloseoutSessionRepository,
   IProductionRequestRepository, IDistributionOrderRepository, IDistributionOrderLineRepository,
-  ICashVoucherRepository
+  ICashVoucherRepository, IApprovalRuleRepository, IApprovalRuleLogRepository, IFraudFlagRepository,
+  IReturnWriteoffRequestRepository, IStockCountSessionRepository, IStockCountLineRepository
 } from '../../core/interfaces/repository';
 
 import { BaseRepository } from './base-repository';
@@ -54,6 +55,12 @@ import { ProductionRequestRepository } from './repositories/production-request-r
 import { DistributionOrderRepository } from './repositories/distribution-order-repository';
 import { DistributionOrderLineRepository } from './repositories/distribution-order-line-repository';
 import { CashVoucherRepository } from './repositories/cash-voucher-repository';
+import { ApprovalRuleRepository } from './repositories/approval-rule-repository';
+import { ApprovalRuleLogRepository } from './repositories/approval-rule-log-repository';
+import { FraudFlagRepository } from './repositories/fraud-flag-repository';
+import { ReturnWriteoffRequestRepository } from './repositories/return-writeoff-request-repository';
+import { StockCountSessionRepository } from './repositories/stock-count-session-repository';
+import { StockCountLineRepository } from './repositories/stock-count-line-repository';
 import { IRepository } from '../../core/interfaces/repository';
 import { BaseEntity } from '../../core/domain/entities';
 
@@ -353,6 +360,48 @@ export class RepositoryFactory {
       instances.cashVoucherRepository = new CashVoucherRepository();
     }
     return instances.cashVoucherRepository;
+  }
+
+  static getApprovalRuleRepository(): IApprovalRuleRepository {
+    if (!instances.approvalRuleRepository) {
+      instances.approvalRuleRepository = new ApprovalRuleRepository();
+    }
+    return instances.approvalRuleRepository;
+  }
+
+  static getApprovalRuleLogRepository(): IApprovalRuleLogRepository {
+    if (!instances.approvalRuleLogRepository) {
+      instances.approvalRuleLogRepository = new ApprovalRuleLogRepository();
+    }
+    return instances.approvalRuleLogRepository;
+  }
+
+  static getFraudFlagRepository(): IFraudFlagRepository {
+    if (!instances.fraudFlagRepository) {
+      instances.fraudFlagRepository = new FraudFlagRepository();
+    }
+    return instances.fraudFlagRepository;
+  }
+
+  static getReturnWriteoffRequestRepository(): IReturnWriteoffRequestRepository {
+    if (!instances.returnWriteoffRequestRepository) {
+      instances.returnWriteoffRequestRepository = new ReturnWriteoffRequestRepository();
+    }
+    return instances.returnWriteoffRequestRepository;
+  }
+
+  static getStockCountSessionRepository(): IStockCountSessionRepository {
+    if (!instances.stockCountSessionRepository) {
+      instances.stockCountSessionRepository = new StockCountSessionRepository();
+    }
+    return instances.stockCountSessionRepository;
+  }
+
+  static getStockCountLineRepository(): IStockCountLineRepository {
+    if (!instances.stockCountLineRepository) {
+      instances.stockCountLineRepository = new StockCountLineRepository();
+    }
+    return instances.stockCountLineRepository;
   }
 
   // Reset all instances (useful for testing)
