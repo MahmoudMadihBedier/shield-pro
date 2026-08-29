@@ -179,31 +179,48 @@ async function syncQueueItem(item: OfflineQueueItem) {
     addLog(`تم توليد الرقم التسلسلي للمزامنة: ${seqNo}`);
   }
 
-  // users.role_name / users.permissions are computed client-side (joined from
-  // roles / role_permissions) for offline permission checks and get cached
-  // locally alongside the real row — but they aren't actual columns on
-  // public.users, so PostgREST rejects the whole write if they're sent.
+  // The cached user profile carries several client-side-derived fields
+  // (role_name, permissions, is_client_user) that are NOT real columns on
+  // public.users. PostgREST rejects the ENTIRE upsert with HTTP 400
+  // (PGRST204 "column not found in schema cache") if any of them are sent,
+  // which previously wedged the presence-heartbeat writes in the queue
+  // forever. Whitelist the real columns instead of denylisting each derived
+  // one, so a future added derived field can't reintroduce the same stall.
   if (table_name === 'users') {
-    delete finalData.role_name;
-    delete finalData.permissions;
+    const USERS_COLUMNS = [
+      'id', 'email', 'name', 'role_id', 'created_at', 'updated_at',
+      'created_by', 'app_version', 'platform', 'last_seen_at', 'warehouse_id'
+    ];
+    finalData = Object.fromEntries(
+      Object.entries(finalData).filter(([k]) => USERS_COLUMNS.includes(k))
+    );
   }
 
   // Push to Supabase
-  if (action === 'insert' || action === 'update') {
-    const { error } = await supabase.from(table_name).upsert(finalData);
+  if (action === 'insert') {
+    // Use a plain INSERT, not upsert. upsert() resolves a PK collision by
+    // running an UPDATE, and many tables intentionally grant INSERT but not
+    // UPDATE via RLS (e.g. user_locations, audit_log) — so a queued insert
+    // whose row already exists on the server (duplicate delivery, or a pull
+    // that re-added the id) would 403/400 on the hidden UPDATE path forever
+    // and wedge the pending-writes counter. A genuine duplicate surfaces as
+    // 23505 instead, which we treat as already-done.
+    const { error } = await supabase.from(table_name).insert(finalData);
     if (error) {
-      // 23505 = unique_violation. Another device already inserted an
-      // equivalent row (e.g. two devices both seeding the same default
-      // permission/role before either had pulled the other's write down).
-      // The desired end state — that row existing — is already satisfied,
-      // so treat it as done instead of retrying forever; the next pull
-      // reconciles this device's local copy with the authoritative row.
-      if (action === 'insert' && error.code === '23505') {
+      // 23505 = unique_violation. The row already exists on the server (this
+      // queued insert already landed on an earlier pass whose response was
+      // lost, or another device inserted an equivalent row). The desired end
+      // state is satisfied, so treat it as done; the next pull reconciles the
+      // local copy with the authoritative row.
+      if (error.code === '23505') {
         addLog(`تم تجاهل ${table_name}: السجل موجود بالفعل على السيرفر`);
         return;
       }
       throw error;
     }
+  } else if (action === 'update') {
+    const { error } = await supabase.from(table_name).upsert(finalData);
+    if (error) throw error;
   } else if (action === 'delete') {
     const { error } = await supabase.from(table_name).delete().eq('id', record_id);
     if (error) throw error;
