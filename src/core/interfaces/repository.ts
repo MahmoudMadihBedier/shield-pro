@@ -12,7 +12,8 @@ import {
   Employee, Attendance, PayrollRun,
   Setting, AuditLog, UserLocation,
   Task, EmployeeReport, Bonus, Punishment,
-  RepStockLedger, RepCashLedger, RepCloseoutSession, RepStockRequest, RepStockRequestLine, ProductionRequest,
+  RepStockLedger, RepCashLedger, RepCloseoutSession, RepStockRequest, RepStockRequestLine,
+  BranchCashSettlement, ProductionRequest,
   DistributionOrder, DistributionOrderLine, CashVoucher,
   ApprovalRule, ApprovalRuleLog, FraudFlag,
   ReturnWriteoffRequest, StockCountSession, StockCountLine, InternalNotification
@@ -223,6 +224,11 @@ export interface IRepStockRequestRepository extends IRepository<RepStockRequest>
 
 export interface IRepStockRequestLineRepository extends IRepository<RepStockRequestLine> {
   findByRequestId(requestId: string): Promise<RepStockRequestLine[]>;
+}
+
+export interface IBranchCashSettlementRepository extends IRepository<BranchCashSettlement> {
+  findByBranch(branchWarehouseId: string): Promise<BranchCashSettlement[]>;
+  findByStatus(status: string): Promise<BranchCashSettlement[]>;
 }
 
 export interface ICashVoucherRepository extends IRepository<CashVoucher> {

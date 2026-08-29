@@ -14,6 +14,11 @@ export interface DoubleEntryParams {
   // warehouse a sale was made from) — nullable, most journal entries (a
   // purchase, payroll) stay company-level/unscoped.
   warehouseId?: string | null;
+  // Per-leg branch overrides — used when the two legs belong to different
+  // branches, e.g. a branch-cash -> main-treasury settlement posts
+  // Dr cash(main/null) / Cr cash(branch). Fall back to warehouseId.
+  debitWarehouseId?: string | null;
+  creditWarehouseId?: string | null;
 }
 
 export async function postDoubleEntry({
@@ -24,8 +29,12 @@ export async function postDoubleEntry({
   amount,
   date,
   warehouseId,
+  debitWarehouseId,
+  creditWarehouseId,
 }: DoubleEntryParams): Promise<void> {
   const txDate = date ?? new Date().toISOString().split('T')[0];
+  const debitWh = debitWarehouseId !== undefined ? debitWarehouseId : (warehouseId ?? null);
+  const creditWh = creditWarehouseId !== undefined ? creditWarehouseId : (warehouseId ?? null);
 
   const debitId = crypto.randomUUID();
   const debitResult = await queueOfflineWrite('account_transactions', 'insert', debitId, {
@@ -36,7 +45,7 @@ export async function postDoubleEntry({
     debit: amount,
     credit: 0,
     date: txDate,
-    warehouse_id: warehouseId ?? null,
+    warehouse_id: debitWh,
   });
   if (!debitResult.success) {
     throw new Error(`فشل تسجيل القيد المدين لـ ${refTable}/${refId}: ${debitResult.error ?? 'خطأ غير معروف'}`);
@@ -51,7 +60,7 @@ export async function postDoubleEntry({
     debit: 0,
     credit: amount,
     date: txDate,
-    warehouse_id: warehouseId ?? null,
+    warehouse_id: creditWh,
   });
   if (!creditResult.success) {
     // The debit leg above already succeeded -- surface this loudly rather

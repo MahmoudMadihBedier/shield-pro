@@ -8,13 +8,15 @@ import { PaginationParams } from '../../core/types';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
 import { CashVouchers } from './CashVouchers';
+import { BranchCashSettlements } from './BranchCashSettlements';
 import {
   DollarSign,
   TrendingUp,
   Percent,
   TrendingDown,
   Building,
-  Wallet
+  Wallet,
+  Landmark
 } from 'lucide-react';
 
 // Stable reference (not recreated per render) so the data hooks below don't
@@ -24,7 +26,7 @@ const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
 
 export const Accounting: React.FC = () => {
   // Tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity' | 'vouchers'>('liquidity');
+  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity' | 'vouchers' | 'settlements'>('liquidity');
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
   const { accounts: accountsResult, getCashBankBalance } = useAccounts();
@@ -293,9 +295,19 @@ export const Accounting: React.FC = () => {
           <Wallet className="h-4 w-4" />
           <span>سندات القبض والصرف العامة</span>
         </button>
+        <button
+          onClick={() => setActiveSubTab('settlements')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeSubTab === 'settlements' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Landmark className="h-4 w-4" />
+          <span>تسويات الخزينة</span>
+        </button>
       </div>
 
       {activeSubTab === 'vouchers' && <CashVouchers />}
+      {activeSubTab === 'settlements' && <BranchCashSettlements />}
 
       {activeSubTab === 'liquidity' && (
         <div className="space-y-6">

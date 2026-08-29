@@ -29,5 +29,6 @@ export const SYNC_TABLES = [
   'approval_rules', 'approval_rule_log', 'fraud_flags',
   'return_writeoff_requests', 'stock_count_sessions', 'stock_count_lines',
   'internal_notifications',
-  'rep_stock_requests', 'rep_stock_request_lines'
+  'rep_stock_requests', 'rep_stock_request_lines',
+  'branch_cash_settlements'
 ];

@@ -67,6 +67,7 @@ class ERPDatabase extends Dexie {
   internal_notifications!: Table<any, string>;
   rep_stock_requests!: Table<any, string>;
   rep_stock_request_lines!: Table<any, string>;
+  branch_cash_settlements!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -177,6 +178,11 @@ class ERPDatabase extends Dexie {
     this.version(13).stores({
       rep_stock_requests: 'id, rep_user_id, warehouse_id, status',
       rep_stock_request_lines: 'id, request_id, item_id'
+    });
+
+    // v14: Weekly branch-cashier -> main-treasury cash settlements
+    this.version(14).stores({
+      branch_cash_settlements: 'id, branch_warehouse_id, status, period_end'
     });
   }
 }

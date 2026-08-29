@@ -3,7 +3,7 @@ import {
   Item, StockMovement,
   Customer, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine,
   Supplier, PurchaseInvoice, PurchaseInvoiceLine,
-  Account, AccountTransaction, ReceiptVoucher, PaymentVoucher, CashVoucher,
+  Account, AccountTransaction, ReceiptVoucher, PaymentVoucher, CashVoucher, BranchCashSettlement,
   ItemRecipe, ProductionBatch, ProductionConsumption, ProductionRequest,
   Employee, Attendance, PayrollRun,
   Setting
@@ -79,6 +79,10 @@ export interface IAccountingService {
   getDailyCashPositionForWarehouse(date: string, warehouseId: string | null): Promise<number>;
   getCashVouchers(warehouseId: string | null): Promise<CashVoucher[]>;
   createCashVoucher(voucherType: 'receipt' | 'disbursement', amount: number, accountId: string, reason: string, warehouseId: string | null, date?: string): Promise<CashVoucher>;
+  getBranchUndepositedCash(branchWarehouseId: string): Promise<number>;
+  getBranchCashSettlements(branchWarehouseId: string | null): Promise<BranchCashSettlement[]>;
+  createBranchCashSettlement(branchWarehouseId: string, periodStart: string, periodEnd: string, depositedBy: string, notes?: string): Promise<BranchCashSettlement>;
+  confirmBranchCashSettlement(id: string, confirmedBy: string): Promise<BranchCashSettlement>;
 }
 
 // Manufacturing Service

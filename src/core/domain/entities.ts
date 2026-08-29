@@ -712,6 +712,25 @@ export interface RepStockRequestLine extends BaseEntity {
   requested_qty: number;
 }
 
+// Weekly (or any period) sweep of cash collected at a branch into the main
+// treasury. Branch vs treasury cash is the single 'cash' account, told
+// apart by account_transactions.warehouse_id (branch id vs null). Confirmed
+// by a different person (head/branch accountant) — enforced server-side by
+// enforce_branch_cash_settlement_segregation_of_duties.
+export interface BranchCashSettlement extends BaseEntity {
+  branch_warehouse_id: string;
+  period_start: string;
+  period_end: string;
+  total_amount: number;
+  status: 'draft' | 'submitted' | 'confirmed';
+  deposited_by?: string | null;
+  submitted_at?: string | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+}
+
 export interface ClientFinancialSummary extends BaseEntity {
   customer_id: string;
   client_id?: string;
