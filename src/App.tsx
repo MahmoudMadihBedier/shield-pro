@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, type ComponentType } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './application/services/auth-service';
 import { Auth } from './presentation/components/Auth';
@@ -29,7 +29,10 @@ import {
   Smartphone,
   MapPin,
   FileText,
-  Wallet
+  Wallet,
+  PanelRightClose,
+  PanelRightOpen,
+  type LucideIcon
 } from 'lucide-react';
 
 const Settings = lazy(() => import('./presentation/components/Settings').then(m => ({ default: m.Settings })));
@@ -56,9 +59,46 @@ const ModuleLoadingFallback = () => (
   </div>
 );
 
+// Single source of truth for the sidebar nav AND the mobile header title.
+// `perm` is [module, action] passed to checkPermission; omit for always-visible.
+type NavItem = {
+  tab: string;
+  label: string;
+  icon: LucideIcon;
+  component: ComponentType;
+  perm?: [string, 'view' | 'add' | 'edit' | 'delete'];
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { tab: 'dashboard', label: 'لوحة التحكم والمؤشرات', icon: LayoutDashboard, component: Dashboard },
+  { tab: 'tasks', label: 'مهامي والبلاغات', icon: FileText, component: Tasks },
+  { tab: 'sales', label: 'المبيعات والعملاء', icon: ShoppingCart, component: Sales, perm: ['sales', 'view'] },
+  { tab: 'purchases', label: 'المشتريات والموردين', icon: Users, component: Purchases, perm: ['purchases', 'view'] },
+  { tab: 'inventory', label: 'المخزون والمستودعات', icon: Package, component: Inventory, perm: ['inventory', 'view'] },
+  { tab: 'manufacturing', label: 'التصنيع والتركيبات', icon: Layers, component: Manufacturing, perm: ['manufacturing', 'view'] },
+  { tab: 'accounting', label: 'الحسابات والمالية', icon: DollarSign, component: Accounting, perm: ['accounting', 'view'] },
+  { tab: 'hr', label: 'الموظفين والرواتب', icon: Briefcase, component: HR, perm: ['hr', 'view'] },
+  { tab: 'reports', label: 'التقارير والتحليلات', icon: BarChart3, component: Reports, perm: ['reports', 'view'] },
+  { tab: 'users', label: 'المستخدمون والأجهزة', icon: Smartphone, component: UsersDevices, perm: ['user_tracking', 'view'] },
+  { tab: 'gps', label: 'تتبع المندوبين', icon: MapPin, component: RepTracking, perm: ['gps_tracking', 'view'] },
+  { tab: 'rep_ledger', label: 'عهدة المندوبين', icon: Wallet, component: RepLedger, perm: ['sales', 'view'] },
+  { tab: 'distribution', label: 'توزيع الفروع', icon: Package, component: DistributionOrders, perm: ['inventory', 'view'] },
+  { tab: 'fraud', label: 'الاستثناءات والاحتيال', icon: ShieldAlert, component: FraudAndApprovals, perm: ['settings', 'view'] },
+  { tab: 'inventory_controls', label: 'ضوابط المخزون (QC/جرد)', icon: Layers, component: InventoryControls, perm: ['inventory', 'view'] },
+  { tab: 'settings', label: 'الإعدادات والصلاحيات', icon: SettingsIcon, component: Settings, perm: ['settings', 'view'] },
+];
+
+const DESKTOP_MQ = '(min-width: 768px)';
+const isDesktop = () => typeof window !== 'undefined' && window.matchMedia(DESKTOP_MQ).matches;
+
 function ERPAppContent() {
   const { user, profile, signOut, checkPermission } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Drawer starts open on desktop, closed on phones so it never covers the app on load.
+  const [sidebarOpen, setSidebarOpen] = useState(isDesktop);
+  // Desktop-only "collapse to icon rail" preference, remembered per browser.
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar_collapsed') === '1'; } catch { return false; }
+  });
   const [activeTab, setActiveTab] = useState('dashboard');
 
   useLocationTracking(profile);
@@ -113,6 +153,36 @@ function ERPAppContent() {
     }
   }, [user]);
 
+  // Keep the drawer sensible across viewport changes: auto-open when the
+  // window grows to desktop, auto-close when it shrinks to mobile.
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const onChange = (e: MediaQueryListEvent) => setSidebarOpen(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // Lock body scroll + allow Escape to close while the mobile drawer is open.
+  useEffect(() => {
+    if (!sidebarOpen || isDesktop()) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [sidebarOpen]);
+
+  const toggleRail = () => {
+    setRailCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('sidebar_collapsed', next ? '1' : '0'); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   if (!user) {
     return <Auth />;
   }
@@ -136,305 +206,128 @@ function ERPAppContent() {
     return <CRMClientPortal />;
   }
 
+  const visibleNav = NAV_ITEMS.filter((n) => !n.perm || checkPermission(n.perm[0], n.perm[1]));
+  const activeItem = NAV_ITEMS.find((n) => n.tab === activeTab);
+  const ActiveComponent = activeItem?.component ?? Dashboard;
+
+  const selectTab = (tab: string) => {
+    setActiveTab(tab);
+    if (!isDesktop()) setSidebarOpen(false);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col md:flex-row" dir="rtl">
-      {/* Sidebar Navigation */}
-      <motion.div 
-        initial={{ x: -260 }}
-        animate={{ x: sidebarOpen ? 0 : -260 }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
-        className={`fixed inset-y-0 right-0 z-40 w-64 bg-gray-900 text-gray-100 md:relative md:translate-x-0 ${
-          sidebarOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
+      {/* Backdrop — mobile only, click to dismiss the drawer */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar Navigation — off-canvas drawer on mobile (anchored to the
+          RTL start edge = right), in-flow rail/panel on desktop */}
+      <aside
+        className={`fixed inset-y-0 right-0 z-40 flex flex-col bg-gray-900 text-gray-100
+          transition-[transform,width] duration-300 ease-in-out
+          w-64 ${railCollapsed ? 'md:w-20' : 'md:w-64'}
+          md:relative md:translate-x-0
+          ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'}`}
       >
         {/* Sidebar Header */}
-        <div className="h-16 flex items-center justify-between px-6 bg-gray-950 border-b border-gray-800">
-          <div className="flex items-center gap-2">
+        <div className="h-16 flex items-center justify-between px-4 bg-gray-950 border-b border-gray-800 shrink-0">
+          <div className={`flex items-center gap-2 ${railCollapsed ? 'md:justify-center md:w-full' : ''}`}>
             <motion.div
               animate={{ rotate: 360 }}
-              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
             >
-              <ShieldAlert className="h-7 w-7 text-blue-500" />
+              <ShieldAlert className="h-7 w-7 text-blue-500 shrink-0" />
             </motion.div>
-            <span className="font-extrabold text-lg text-white">شيلد برو ERP</span>
+            <span className={`font-extrabold text-lg text-white whitespace-nowrap ${railCollapsed ? 'md:hidden' : ''}`}>
+              شيلد برو ERP
+            </span>
           </div>
-          <motion.button 
-            onClick={() => setSidebarOpen(false)} 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
+          <button
+            onClick={() => setSidebarOpen(false)}
             className="md:hidden text-gray-400 hover:text-white"
+            aria-label="إغلاق القائمة"
           >
             <X className="h-6 w-6" />
-          </motion.button>
+          </button>
         </div>
 
         {/* Sidebar Profile Card */}
-        <div className="p-4 border-b border-gray-800 bg-gray-900/50">
+        <div className={`p-4 border-b border-gray-800 bg-gray-900/50 shrink-0 ${railCollapsed ? 'md:hidden' : ''}`}>
           <div className="text-xs text-gray-400 font-bold">الموظف الحالي:</div>
-          <div className="font-bold text-sm mt-1 text-white">{profile?.name || user.email?.split('@')[0]}</div>
+          <div className="font-bold text-sm mt-1 text-white truncate">{profile?.name || user.email?.split('@')[0]}</div>
           <div className="text-[10px] text-blue-400 font-bold mt-0.5">{profile?.role_name || 'مستخدم النظام'}</div>
         </div>
 
         {/* Sidebar Links */}
-        <div className="flex-1 px-4 py-6 space-y-1 overflow-y-auto max-h-[calc(100vh-180px)]">
-          <motion.button
-            onClick={() => setActiveTab('dashboard')}
-            whileHover={{ scale: 1.02, x: 4 }}
-            whileTap={{ scale: 0.98 }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-              activeTab === 'dashboard' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <LayoutDashboard className="h-5 w-5" />
-            <span>لوحة التحكم والمؤشرات</span>
-          </motion.button>
-
-          <motion.button
-            onClick={() => setActiveTab('tasks')}
-            whileHover={{ scale: 1.02, x: 4 }}
-            whileTap={{ scale: 0.98 }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-              activeTab === 'tasks' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <FileText className="h-5 w-5" />
-            <span>مهامي والبلاغات</span>
-          </motion.button>
-
-          {checkPermission('sales', 'view') && (
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {visibleNav.map(({ tab, label, icon: Icon }) => (
             <motion.button
-              onClick={() => setActiveTab('sales')}
-              whileHover={{ scale: 1.02, x: 4 }}
+              key={tab}
+              onClick={() => selectTab(tab)}
+              whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'sales' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
+              title={railCollapsed ? label : undefined}
+              aria-current={activeTab === tab ? 'page' : undefined}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition
+                ${railCollapsed ? 'md:justify-center' : ''}
+                ${activeTab === tab ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
             >
-              <ShoppingCart className="h-5 w-5" />
-              <span>المبيعات والعملاء</span>
+              <Icon className="h-5 w-5 shrink-0" />
+              <span className={railCollapsed ? 'md:hidden' : ''}>{label}</span>
             </motion.button>
-          )}
-
-          {checkPermission('purchases', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('purchases')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'purchases' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Users className="h-5 w-5" />
-              <span>المشتريات والموردين</span>
-            </motion.button>
-          )}
-
-          {checkPermission('inventory', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('inventory')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Package className="h-5 w-5" />
-              <span>المخزون والمستودعات</span>
-            </motion.button>
-          )}
-
-          {checkPermission('manufacturing', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('manufacturing')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'manufacturing' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Layers className="h-5 w-5" />
-              <span>التصنيع والتركيبات</span>
-            </motion.button>
-          )}
-
-          {checkPermission('accounting', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('accounting')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'accounting' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <DollarSign className="h-5 w-5" />
-              <span>الحسابات والمالية</span>
-            </motion.button>
-          )}
-
-          {checkPermission('hr', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('hr')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'hr' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Briefcase className="h-5 w-5" />
-              <span>الموظفين والرواتب</span>
-            </motion.button>
-          )}
-
-          {checkPermission('reports', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('reports')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'reports' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <BarChart3 className="h-5 w-5" />
-              <span>التقارير والتحليلات</span>
-            </motion.button>
-          )}
-
-          {checkPermission('user_tracking', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('users')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'users' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Smartphone className="h-5 w-5" />
-              <span>المستخدمون والأجهزة</span>
-            </motion.button>
-          )}
-
-          {checkPermission('gps_tracking', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('gps')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'gps' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <MapPin className="h-5 w-5" />
-              <span>تتبع المندوبين</span>
-            </motion.button>
-          )}
-
-          {checkPermission('sales', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('rep_ledger')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'rep_ledger' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Wallet className="h-5 w-5" />
-              <span>عهدة المندوبين</span>
-            </motion.button>
-          )}
-
-          {checkPermission('inventory', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('distribution')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'distribution' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Package className="h-5 w-5" />
-              <span>توزيع الفروع</span>
-            </motion.button>
-          )}
-
-          {checkPermission('settings', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('fraud')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'fraud' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <ShieldAlert className="h-5 w-5" />
-              <span>الاستثناءات والاحتيال</span>
-            </motion.button>
-          )}
-
-          {checkPermission('inventory', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('inventory_controls')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'inventory_controls' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <Layers className="h-5 w-5" />
-              <span>ضوابط المخزون (QC/جرد)</span>
-            </motion.button>
-          )}
-
-          {checkPermission('settings', 'view') && (
-            <motion.button
-              onClick={() => setActiveTab('settings')}
-              whileHover={{ scale: 1.02, x: 4 }}
-              whileTap={{ scale: 0.98 }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
-                activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              }`}
-            >
-              <SettingsIcon className="h-5 w-5" />
-              <span>الإعدادات والصلاحيات</span>
-            </motion.button>
-          )}
+          ))}
 
           <motion.button
             onClick={handleLogout}
-            whileHover={{ scale: 1.02, x: 4 }}
+            whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold text-red-400 hover:bg-red-950/30 hover:text-red-300 transition"
+            title={railCollapsed ? 'تسجيل الخروج' : undefined}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold text-red-400 hover:bg-red-950/30 hover:text-red-300 transition
+              ${railCollapsed ? 'md:justify-center' : ''}`}
           >
-            <LogOut className="h-5 w-5" />
-            <span>تسجيل الخروج</span>
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span className={railCollapsed ? 'md:hidden' : ''}>تسجيل الخروج</span>
           </motion.button>
-        </div>
-      </motion.div>
+        </nav>
+      </aside>
 
       {/* Main App Content Area */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="flex-1 flex flex-col min-h-screen"
-      >
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
         {/* Header Bar */}
-        <header className="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm sticky top-0 z-30">
-          <div className="flex items-center gap-4">
-            <motion.button 
-              onClick={() => setSidebarOpen(true)} 
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
+        <header className="h-16 bg-white border-b flex items-center justify-between px-4 sm:px-6 shadow-sm sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            {/* Mobile: open drawer */}
+            <button
+              onClick={() => setSidebarOpen(true)}
               className="md:hidden text-gray-500 hover:text-gray-700"
+              aria-label="فتح القائمة"
+              aria-expanded={sidebarOpen}
             >
               <Menu className="h-6 w-6" />
-            </motion.button>
-            <div className="hidden md:block font-bold text-gray-800 text-sm">
-              نظام إدارة المنشأة الموحد (ERP)
+            </button>
+            {/* Desktop: collapse / expand the icon rail */}
+            <button
+              onClick={toggleRail}
+              className="hidden md:inline-flex text-gray-500 hover:text-gray-700"
+              aria-label={railCollapsed ? 'توسيع القائمة الجانبية' : 'طيّ القائمة الجانبية'}
+              aria-expanded={!railCollapsed}
+            >
+              {railCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelRightClose className="h-5 w-5" />}
+            </button>
+            <div className="font-bold text-gray-800 text-sm truncate">
+              <span className="hidden md:inline">نظام إدارة المنشأة الموحد (ERP)</span>
+              <span className="md:hidden">{activeItem?.label ?? 'شيلد برو'}</span>
             </div>
           </div>
 
           {/* Sync & Connectivity Badges */}
-          <div className="flex items-center gap-4">
-            {/* Sync Queue Pending Indicator */}
+          <div className="flex items-center gap-2 sm:gap-4">
             {syncState?.pendingCount > 0 && (
               <button
                 type="button"
@@ -443,25 +336,25 @@ function ERPAppContent() {
                 title="عرض العمليات بانتظار الرفع"
               >
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                <span>{syncState.pendingCount} عملية بانتظار الرفع</span>
+                <span className="hidden sm:inline">{syncState.pendingCount} عملية بانتظار الرفع</span>
+                <span className="sm:hidden">{syncState.pendingCount}</span>
               </button>
             )}
 
-            {/* Connectivity Status Badge */}
             {syncState?.status === 'offline' ? (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">
                 <WifiOff className="h-3.5 w-3.5" />
-                <span>أوفلاين (محلي)</span>
+                <span className="hidden sm:inline">أوفلاين (محلي)</span>
               </span>
             ) : syncState?.status === 'syncing' ? (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-200">
                 <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                <span>جاري المزامنة...</span>
+                <span className="hidden sm:inline">جاري المزامنة...</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-200">
                 <Wifi className="h-3.5 w-3.5" />
-                <span>متصل بالشبكة (أونلاين)</span>
+                <span className="hidden sm:inline">متصل بالشبكة (أونلاين)</span>
               </span>
             )}
 
@@ -498,186 +391,19 @@ function ERPAppContent() {
         <main className="flex-1 bg-gray-50 overflow-y-auto">
           <Suspense fallback={<ModuleLoadingFallback />}>
             <AnimatePresence mode="wait">
-              {activeTab === 'dashboard' && (
-                <motion.div
-                  key="dashboard"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Dashboard />
-                </motion.div>
-              )}
-              {activeTab === 'tasks' && (
-                <motion.div
-                  key="tasks"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Tasks />
-                </motion.div>
-              )}
-              {activeTab === 'sales' && (
-                <motion.div
-                  key="sales"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Sales />
-                </motion.div>
-              )}
-              {activeTab === 'purchases' && (
-                <motion.div
-                  key="purchases"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Purchases />
-                </motion.div>
-              )}
-              {activeTab === 'inventory' && (
-                <motion.div
-                  key="inventory"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Inventory />
-                </motion.div>
-              )}
-              {activeTab === 'manufacturing' && (
-                <motion.div
-                  key="manufacturing"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Manufacturing />
-                </motion.div>
-              )}
-              {activeTab === 'accounting' && (
-                <motion.div
-                  key="accounting"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Accounting />
-                </motion.div>
-              )}
-              {activeTab === 'hr' && (
-                <motion.div
-                  key="hr"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <HR />
-                </motion.div>
-              )}
-              {activeTab === 'reports' && (
-                <motion.div
-                  key="reports"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Reports />
-                </motion.div>
-              )}
-              {activeTab === 'users' && (
-                <motion.div
-                  key="users"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <UsersDevices />
-                </motion.div>
-              )}
-              {activeTab === 'gps' && (
-                <motion.div
-                  key="gps"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <RepTracking />
-                </motion.div>
-              )}
-              {activeTab === 'rep_ledger' && (
-                <motion.div
-                  key="rep_ledger"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <RepLedger />
-                </motion.div>
-              )}
-              {activeTab === 'distribution' && (
-                <motion.div
-                  key="distribution"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <DistributionOrders />
-                </motion.div>
-              )}
-              {activeTab === 'fraud' && (
-                <motion.div
-                  key="fraud"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <FraudAndApprovals />
-                </motion.div>
-              )}
-              {activeTab === 'inventory_controls' && (
-                <motion.div
-                  key="inventory_controls"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <InventoryControls />
-                </motion.div>
-              )}
-              {activeTab === 'settings' && (
-                <motion.div
-                  key="settings"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <Settings />
-                </motion.div>
-              )}
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ActiveComponent />
+              </motion.div>
             </AnimatePresence>
           </Suspense>
         </main>
-      </motion.div>
+      </div>
     </div>
   );
 }
