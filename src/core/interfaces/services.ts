@@ -93,6 +93,7 @@ export interface IManufacturingService {
   getBatchConsumptions(batchId: string): Promise<ProductionConsumption[]>;
   createProductionRequest(itemId: string, requestedQty: number, requestedBy: string, rawMaterialWarehouseId: string, notes?: string): Promise<ProductionRequest>;
   getProductionRequests(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionRequest>>;
+  getProductionMaterialPlan(itemId: string, outputQty: number, rawWarehouseId: string): Promise<{ component_item_id: string; requiredQty: number; onHand: number; shortfall: number }[]>;
   approveProductionRequestMaterials(requestId: string, approvedBy: string): Promise<ProductionRequest>;
   rejectProductionRequest(requestId: string, rejectedBy: string, reason: string): Promise<ProductionRequest>;
   startProductionFromRequest(requestId: string, plannedQty: number): Promise<ProductionBatch>;
