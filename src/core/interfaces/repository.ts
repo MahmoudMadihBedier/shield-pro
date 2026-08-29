@@ -13,7 +13,9 @@ import {
   Setting, AuditLog, UserLocation,
   Task, EmployeeReport, Bonus, Punishment,
   RepStockLedger, RepCashLedger, RepCloseoutSession, ProductionRequest,
-  DistributionOrder, DistributionOrderLine, CashVoucher
+  DistributionOrder, DistributionOrderLine, CashVoucher,
+  ApprovalRule, ApprovalRuleLog, FraudFlag,
+  ReturnWriteoffRequest, StockCountSession, StockCountLine, InternalNotification
 } from '../domain/entities';
 
 // Base Repository Interface
@@ -214,4 +216,32 @@ export interface IDistributionOrderLineRepository extends IRepository<Distributi
 export interface ICashVoucherRepository extends IRepository<CashVoucher> {
   findByWarehouseId(warehouseId: string | null): Promise<CashVoucher[]>;
   findByDateRange(startDate: string, endDate: string): Promise<CashVoucher[]>;
+}
+
+export interface IApprovalRuleRepository extends IRepository<ApprovalRule> {
+  findByMovementType(movementType: string): Promise<ApprovalRule | undefined>;
+}
+
+export interface IApprovalRuleLogRepository extends IRepository<ApprovalRuleLog> {
+  findByActor(actorId: string, sinceIso: string): Promise<ApprovalRuleLog[]>;
+}
+
+export interface IFraudFlagRepository extends IRepository<FraudFlag> {
+  findByStatus(status: string): Promise<FraudFlag[]>;
+}
+
+export interface IReturnWriteoffRequestRepository extends IRepository<ReturnWriteoffRequest> {
+  findByStatus(status: string): Promise<ReturnWriteoffRequest[]>;
+}
+
+export interface IStockCountSessionRepository extends IRepository<StockCountSession> {
+  findByWarehouseId(warehouseId: string): Promise<StockCountSession[]>;
+}
+
+export interface IStockCountLineRepository extends IRepository<StockCountLine> {
+  findBySessionId(sessionId: string): Promise<StockCountLine[]>;
+}
+
+export interface IInternalNotificationRepository extends IRepository<InternalNotification> {
+  findForUser(userId: string, roleId: string | null): Promise<InternalNotification[]>;
 }

@@ -1,19 +1,29 @@
 import { supabase } from '../../infrastructure/api/supabase';
+import { hashPin } from '../../shared/utils/pin-hash';
 
 /**
  * CRM Service for handling client portal operations
  */
 export class CRMService {
   /**
-   * Authenticate client using client_id only (no email/password)
-   * 
-   * This implementation looks up the customer by client_id and then
-   * attempts to authenticate using the linked user account.
-   * The linked user account should have been created by the admin
-   * with the client_id as the password for simplicity.
+   * Authenticate client using client_id + a PIN (second factor).
+   *
+   * client_id alone is not a secret — it's the human-friendly identifier
+   * shared with the customer over WhatsApp/email, and it's also literally
+   * the underlying Supabase Auth password (a known, documented weak point,
+   * see SHIELD_PRO_REFACTOR_MASTER_PLAN.md Phase 3.1 — full remediation
+   * requires rotating that password via the Auth Admin API, out of reach
+   * here). The PIN is the actual gate: even with a valid client_id, a
+   * customer without their PIN cannot reach the portal. If a customer has
+   * no PIN set yet (not migrated / admin hasn't set one), login is refused
+   * with a clear "contact the company" message rather than silently
+   * falling back to the old client_id-only behavior.
    */
-  static async authenticateByClientId(clientId: string) {
+  static async authenticateByClientId(clientId: string, pin: string) {
     try {
+      if (!pin || !pin.trim()) {
+        return { success: false, error: 'يرجى إدخال الرقم السري (PIN)' };
+      }
       // Look up customer by client_id
       const { data: customerData, error: customerError } = await supabase
         .from('customers')
@@ -65,6 +75,25 @@ export class CRMService {
         return {
           success: false,
           error: 'Failed to create session. Please contact the company.'
+        };
+      }
+
+      // Second factor: client_id got them a Supabase session, but the PIN
+      // is what actually authorizes portal access. A failed/missing check
+      // here signs them back out immediately — no session survives without it.
+      const pinHash = await hashPin(pin);
+      const { data: pinValid, error: pinError } = await supabase.rpc('verify_portal_pin', {
+        p_client_id: clientId,
+        p_pin_hash: pinHash
+      });
+
+      if (pinError || !pinValid) {
+        await supabase.auth.signOut();
+        return {
+          success: false,
+          error: customerData.portal_pin_hash
+            ? 'الرقم السري غير صحيح'
+            : 'لم يتم تفعيل الرقم السري لهذا الحساب بعد. يرجى التواصل مع الشركة.'
         };
       }
 

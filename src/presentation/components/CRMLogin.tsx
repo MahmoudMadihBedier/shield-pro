@@ -5,6 +5,7 @@ import { CRMService } from '../../application/services/crm-service';
 
 export function CRMLogin() {
   const [clientId, setClientId] = useState('');
+  const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -19,9 +20,14 @@ export function CRMLogin() {
       setLoading(false);
       return;
     }
+    if (!pin.trim()) {
+      setError('يرجى إدخال الرقم السري (PIN)');
+      setLoading(false);
+      return;
+    }
 
     try {
-      const result = await CRMService.authenticateByClientId(clientId.trim());
+      const result = await CRMService.authenticateByClientId(clientId.trim(), pin.trim());
       
       if (result.success) {
         setSuccess(true);
@@ -109,6 +115,21 @@ export function CRMLogin() {
               <p className="text-xs text-gray-500 mt-2">
                 أدخل معرف العميل الذي حصلت عليه من الشركة
               </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-2">
+                الرقم السري (PIN)
+              </label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="••••••"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-left"
+                dir="ltr"
+                disabled={loading}
+              />
             </div>
 
             <motion.button

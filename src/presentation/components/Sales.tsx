@@ -52,7 +52,7 @@ export const Sales: React.FC = () => {
   const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
-  const { customers: customersResult, createCustomer, approveCustomer } = useCustomers();
+  const { customers: customersResult, createCustomer, approveCustomer, setCustomerPortalPin } = useCustomers();
   const customers = customersResult.data;
 
   const { invoices: salesInvoicesResult, createInvoice } = useSalesInvoices(undefined, UNPAGINATED);
@@ -187,6 +187,25 @@ export const Sales: React.FC = () => {
 
   // Branch picked in the pending-customer-approval dropdown, keyed by customer id.
   const [approvalWarehouse, setApprovalWarehouse] = useState<{ [customerId: string]: string }>({});
+
+  // Client-portal PIN being set, keyed by customer id (null = not editing).
+  const [editingPinFor, setEditingPinFor] = useState<string | null>(null);
+  const [pinValue, setPinValue] = useState('');
+
+  const handleSetPin = async (customerId: string) => {
+    if (!/^\d{4,6}$/.test(pinValue)) {
+      error('يجب أن يكون الرقم السري من 4 إلى 6 أرقام');
+      return;
+    }
+    try {
+      await setCustomerPortalPin(customerId, pinValue);
+      success('تم تعيين الرقم السري لبوابة العميل بنجاح');
+      setEditingPinFor(null);
+      setPinValue('');
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل تعيين الرقم السري'));
+    }
+  };
 
   const handleApproveCustomer = async (customerId: string) => {
     const warehouseId = approvalWarehouse[customerId] || warehouses[0]?.id;
@@ -744,14 +763,38 @@ export const Sales: React.FC = () => {
                         )}
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          className="text-blue-600 hover:text-blue-800 p-1"
-                          title="تفاصيل العميل"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </motion.button>
+                        <div className="flex items-center justify-center gap-1">
+                          <motion.button
+                            whileHover={{ scale: 1.1 }}
+                            whileTap={{ scale: 0.9 }}
+                            className="text-blue-600 hover:text-blue-800 p-1"
+                            title="تفاصيل العميل"
+                          >
+                            <FileText className="h-4 w-4" />
+                          </motion.button>
+                          {editingPinFor === c.id ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={pinValue}
+                                onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))}
+                                maxLength={6}
+                                placeholder="PIN"
+                                className="border rounded p-1 w-16 text-xs"
+                              />
+                              <button onClick={() => handleSetPin(c.id)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">حفظ</button>
+                              <button onClick={() => { setEditingPinFor(null); setPinValue(''); }} className="text-xs text-gray-400">×</button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => { setEditingPinFor(c.id); setPinValue(''); }}
+                              className="text-xs text-purple-600 hover:underline"
+                              title="تعيين رقم سري لبوابة العميل"
+                            >
+                              PIN
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   ))}

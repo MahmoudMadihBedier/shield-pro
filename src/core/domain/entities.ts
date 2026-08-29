@@ -142,6 +142,10 @@ export interface Customer extends BaseEntity {
   approval_status?: 'approved' | 'pending';
   lat?: number | null;
   lng?: number | null;
+  // SHA-256 hash of the client portal PIN — the actual second factor for
+  // portal login (client_id alone is not a secret). Never store/compare the
+  // plaintext PIN; see shared/utils/pin-hash.ts and verify_portal_pin RPC.
+  portal_pin_hash?: string | null;
 }
 
 export interface SalesInvoice extends BaseEntity {
@@ -217,6 +221,10 @@ export interface PurchaseInvoiceLine extends BaseEntity {
   unit_price: number;
   discount: number;
   line_total: number;
+  // Phase 1.2 — links this raw-material receipt to the supplier's own lot,
+  // completing the recall trail: purchase lot -> production_consumptions ->
+  // production_batches -> every unit sold from that batch.
+  supplier_lot_number?: string | null;
 }
 
 // Accounting Entities
@@ -292,12 +300,58 @@ export interface ProductionBatch extends BaseEntity {
   expected_waste_pct?: number;
   actual_waste_pct?: number | null;
   expiry_date?: string | null;
-  status: 'draft' | 'confirmed' | 'completed';
+  // 'pending_qc'/'released'/'rejected' — Phase 2.7: output isn't sellable
+  // stock until QC releases it, by someone other than whoever produced it.
+  status: 'draft' | 'confirmed' | 'completed' | 'pending_qc' | 'released' | 'rejected';
   produced_at?: string;
   // Set when this batch originated from an approved ProductionRequest — its
   // raw materials were already withdrawn at request-approval time, so
   // completeBatch must not post a second consumption deduction for them.
   production_request_id?: string | null;
+  qc_released_by?: string | null;
+  qc_released_at?: string | null;
+  qc_rejection_reason?: string | null;
+  // Who produced the batch — needed for the QC segregation-of-duties check
+  // (releaser must differ from producer). Real column on every table
+  // (created_by uuid default auth.uid()) but not part of the shared
+  // BaseEntity type; declared here since this is the first place it's read.
+  created_by?: string | null;
+}
+
+// Phase 2.8 — formal return/write-off instead of goods silently
+// "disappearing" from the books. Segregation of duties: requester != approver.
+export interface ReturnWriteoffRequest extends BaseEntity {
+  request_type: 'customer_return' | 'damage_writeoff';
+  item_id: string;
+  warehouse_id: string;
+  qty: number;
+  customer_id?: string | null;
+  reason: string;
+  requested_by: string;
+  status: 'pending' | 'approved' | 'rejected';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+}
+
+// Phase 2.9 — physical stock count vs. system-recorded stock, the
+// real-world check on whether the traceability chain matches reality.
+export interface StockCountSession extends BaseEntity {
+  warehouse_id: string;
+  status: 'open' | 'submitted' | 'signed_off';
+  counted_by?: string | null;
+  submitted_at?: string | null;
+  signed_off_by?: string | null;
+  signed_off_at?: string | null;
+  notes?: string;
+}
+
+export interface StockCountLine extends BaseEntity {
+  session_id: string;
+  item_id: string;
+  expected_qty: number;
+  counted_qty?: number | null;
+  variance?: number | null;
 }
 
 export interface ProductionConsumption extends BaseEntity {
@@ -342,6 +396,13 @@ export interface Attendance extends BaseEntity {
   date: string;
   check_in?: string;
   check_out?: string;
+  // GPS stamp captured at clock-in/out time — enforced server-side
+  // (enforce_self_attendance) to be the employee's own action, not entered
+  // on their behalf by anyone with hr:add.
+  check_in_lat?: number | null;
+  check_in_lng?: number | null;
+  check_out_lat?: number | null;
+  check_out_lng?: number | null;
 }
 
 export interface PayrollRun extends BaseEntity {
@@ -351,6 +412,10 @@ export interface PayrollRun extends BaseEntity {
   allowances: number;
   deductions: number;
   net_pay: number;
+  // Folded into net_pay (base + allowances - deductions + bonuses - punishments)
+  // — broken out here so the run itself shows what was applied.
+  bonuses_total?: number;
+  punishments_total?: number;
 }
 
 // System Entities
@@ -508,6 +573,52 @@ export interface DistributionOrderLine extends BaseEntity {
   item_id: string;
   requested_qty: number;
   received_qty?: number | null;
+}
+
+// Phase 2.2/2.3 — tiered auto-approval rules + round-tripping detection.
+// Advisory in this pass: evaluated and logged, but does not itself bypass
+// the segregation-of-duties triggers on distribution_orders/production_requests.
+export interface ApprovalRule extends BaseEntity {
+  movement_type: string;
+  auto_approve_threshold_qty: number;
+  repeat_window_hours: number;
+  repeat_max_count: number;
+  is_active: boolean;
+}
+
+export interface ApprovalRuleLog extends BaseEntity {
+  movement_type: string;
+  actor_id?: string | null;
+  item_id?: string | null;
+  qty?: number | null;
+  rule_matched?: string | null;
+  outcome: 'would_auto_approve' | 'manual_review_required';
+  ref_table?: string;
+  ref_id?: string;
+}
+
+export interface FraudFlag extends BaseEntity {
+  flag_type: 'round_tripping' | 'high_reversal_ratio' | 'repeated_request_pattern';
+  actor_id?: string | null;
+  item_id?: string | null;
+  details?: Record<string, unknown> | null;
+  status: 'open' | 'reviewed' | 'dismissed';
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+}
+
+// Phase 2.6 — internal staff alerts (distinct from ClientNotification, which
+// is customer-facing). Targeted at a specific user OR a whole role (e.g.
+// every branch accountant), observer-style: whoever's listening sees it.
+export interface InternalNotification extends BaseEntity {
+  user_id?: string | null;
+  role_id?: string | null;
+  type: 'low_stock' | 'pending_approval' | 'overdue_customer' | 'missed_closeout' | 'fraud_flag' | 'qc_pending' | 'system';
+  title: string;
+  message: string;
+  data?: Record<string, unknown> | null;
+  is_read: boolean;
+  read_at?: string | null;
 }
 
 // Rep stock/cash-in-hand ledger + daily close-out (Phase 2.4 — the highest

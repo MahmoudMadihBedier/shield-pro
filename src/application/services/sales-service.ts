@@ -6,11 +6,19 @@ import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { postDoubleEntry } from './accounting-helpers';
 import { supabase } from '../../infrastructure/api/supabase';
 import { RepLedgerService } from './rep-ledger-service';
+import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 
 export interface RepIssuanceOptions {
   // When set, the sale is attributed to this rep's stock-in-hand instead of
   // a direct warehouse counter sale — see createInvoice below.
   repUserId: string;
+}
+
+export interface CreditOverride {
+  // Whoever is about to exceed the customer's credit limit cannot also be
+  // the one who authorizes the override — segregation of duties.
+  requestedBy: string;
+  approvedBy: string;
 }
 
 export class SalesService implements ISalesService {
@@ -41,6 +49,15 @@ export class SalesService implements ISalesService {
     // 4. Assign the client_portal role to the user
     // Clients authenticate using client_id only, no email/password needed from their perspective
     return newCustomer;
+  }
+
+  // Sets the client-portal second factor (see crm-service.ts) — the PIN is
+  // hashed client-side and only the hash ever reaches the database.
+  async setCustomerPortalPin(customerId: string, pin: string): Promise<void> {
+    const { hashPin } = await import('../../shared/utils/pin-hash');
+    const portalPinHash = await hashPin(pin);
+    const updated = await this.customerRepository.update(customerId, { portal_pin_hash: portalPinHash });
+    await queueOfflineWrite('customers', 'update', customerId, updated);
   }
 
   // Admin-only in practice: the DB trigger (enforce_admin_only_customer_branch)
@@ -86,8 +103,34 @@ export class SalesService implements ISalesService {
     invoice: Omit<SalesInvoice, 'id' | 'created_at' | 'updated_at' | 'warehouse_id'>,
     lines: Omit<SalesInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
     warehouseId: string,
-    repIssuance?: RepIssuanceOptions
+    repIssuance?: RepIssuanceOptions,
+    creditOverride?: CreditOverride
   ): Promise<SalesInvoice> {
+    // Phase 2.5 — a customer who would exceed their credit limit is blocked
+    // from further credit sales until explicitly overridden by someone
+    // other than whoever requested the sale (segregation of duties). Cash/
+    // bank sales never touch the limit; credit_limit left unset (null)
+    // means "no limit configured", not "unlimited by policy default" —
+    // treated the same as unlimited here since that's an explicit admin choice.
+    if (invoice.payment_method === 'credit') {
+      const customer = await this.customerRepository.findById(invoice.customer_id);
+      if (customer?.credit_limit != null) {
+        const outstanding = await this.getCustomerOutstandingBalance(invoice.customer_id);
+        if (outstanding + Number(invoice.total) > Number(customer.credit_limit)) {
+          if (!creditOverride) {
+            throw new Error(
+              `تم رفض البيع الآجل: يتجاوز حد ائتمان العميل (الحد: ${customer.credit_limit}, الرصيد الحالي: ${outstanding.toFixed(2)}, قيمة الفاتورة: ${invoice.total}). يلزم اعتماد مدير لتجاوز الحد.`
+            );
+          }
+          assertSegregationOfDuties({
+            requestedBy: creditOverride.requestedBy,
+            actingUserId: creditOverride.approvedBy,
+            action: 'اعتماد تجاوز حد الائتمان'
+          });
+        }
+      }
+    }
+
     // warehouse_id drives RLS branch-scoping on sales_invoices (NOT NULL —
     // every invoice must be attributed to the branch it was sold from), so
     // it's derived from the warehouseId param rather than left for the
@@ -267,6 +310,65 @@ export class SalesService implements ISalesService {
   // (credit = amount) + sales returns (credit = total), filtered to the date
   // range, sorted chronologically for a running balance, then returned
   // newest-first to match the component's display order.
+  // Current running balance (opening balance + invoices - receipts -
+  // returns), all-time — the figure the credit-limit check above compares
+  // against. Deliberately NOT date-ranged (unlike getCustomerStatement),
+  // since a credit decision needs the true current balance, not a window.
+  async getCustomerOutstandingBalance(customerId: string): Promise<number> {
+    const customer = await this.customerRepository.findById(customerId);
+    if (!customer) return 0;
+
+    const invoices = await this.salesInvoiceRepository.findByCustomerId(customerId);
+    const vouchers = await this.receiptVoucherRepository.findByCustomerId(customerId);
+    const returnsResult = await this.salesReturnRepository.findAll(
+      { customer_id: customerId },
+      { page: 1, limit: Number.MAX_SAFE_INTEGER }
+    );
+
+    const invoicesTotal = invoices.filter((i) => i.status !== 'cancelled').reduce((sum, i) => sum + Number(i.total), 0);
+    const receiptsTotal = vouchers.reduce((sum, v) => sum + Number(v.amount), 0);
+    const returnsTotal = returnsResult.data.reduce((sum, r) => sum + Number(r.total), 0);
+
+    return Number(customer.opening_balance || 0) + invoicesTotal - receiptsTotal - returnsTotal;
+  }
+
+  // Phase 2.5/6.6 — aging buckets (0-30/31-60/61-90/90+ days overdue) across
+  // all customers, for the accounts-receivable risk view.
+  async getCustomerAgingReport(): Promise<{
+    customer_id: string;
+    name: string;
+    bucket_0_30: number;
+    bucket_31_60: number;
+    bucket_61_90: number;
+    bucket_90_plus: number;
+    total: number;
+  }[]> {
+    const customers = (await this.customerRepository.findAll(undefined, { page: 1, limit: Number.MAX_SAFE_INTEGER })).data;
+    const today = new Date();
+
+    const result = [];
+    for (const customer of customers) {
+      const invoices = (await this.salesInvoiceRepository.findByCustomerId(customer.id))
+        .filter((i) => i.status === 'unpaid' || i.status === 'partially_paid');
+
+      const buckets = { bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0 };
+      for (const inv of invoices) {
+        const ageDays = Math.floor((today.getTime() - new Date(inv.date).getTime()) / (1000 * 3600 * 24));
+        const amount = Number(inv.total);
+        if (ageDays <= 30) buckets.bucket_0_30 += amount;
+        else if (ageDays <= 60) buckets.bucket_31_60 += amount;
+        else if (ageDays <= 90) buckets.bucket_61_90 += amount;
+        else buckets.bucket_90_plus += amount;
+      }
+
+      const total = buckets.bucket_0_30 + buckets.bucket_31_60 + buckets.bucket_61_90 + buckets.bucket_90_plus;
+      if (total > 0) {
+        result.push({ customer_id: customer.id, name: customer.name, ...buckets, total });
+      }
+    }
+    return result;
+  }
+
   async getCustomerStatement(customerId: string, startDate: string, endDate: string): Promise<CustomerStatementEntry[]> {
     const customer = await this.customerRepository.findById(customerId);
     if (!customer) return [];

@@ -116,7 +116,7 @@ Rules below only cover things that OVERRIDE defaults or encode project decisions
 - **Publishable Key**: sb_publishable_EPJSz4pR7sRR3e2tCUJKUg_B31EVOli
 
 ## Database
-- **Direct Connection String**: postgresql://postgres:LOLAmahmoud@db.viqgnjxujcwluqrxqivh.supabase.co:5432/postgres
+- **Direct Connection String**: postgresql://postgres:[REDACTED — see .env.local, which is gitignored]@db.viqgnjxujcwluqrxqivh.supabase.co:5432/postgres
 
 ## Environment Variables
 Store these in `.env.local` (already configured):

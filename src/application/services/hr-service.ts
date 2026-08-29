@@ -14,6 +14,38 @@ export class HRService implements IHRService {
   private attendanceRepository = RepositoryFactory.getAttendanceRepository();
   private payrollRunRepository = RepositoryFactory.getPayrollRunRepository();
   private accountRepository = RepositoryFactory.getAccountRepository();
+  private bonusRepository = RepositoryFactory.getBonusRepository();
+  private punishmentRepository = RepositoryFactory.getPunishmentRepository();
+
+  // Self clock-in/out — enforced server-side too (enforce_self_attendance):
+  // the acting user must be the employee's own linked account.
+  async clockIn(employeeId: string, lat?: number | null, lng?: number | null): Promise<Attendance> {
+    const today = new Date().toISOString().split('T')[0];
+    const existing = (await this.attendanceRepository.findByEmployeeId(employeeId)).find((a) => a.date === today);
+    if (existing) return existing;
+    const record = await this.attendanceRepository.create({
+      employee_id: employeeId,
+      date: today,
+      check_in: new Date().toTimeString().split(' ')[0],
+      check_in_lat: lat ?? null,
+      check_in_lng: lng ?? null
+    });
+    await queueOfflineWrite('attendance', 'insert', record.id, record);
+    return record;
+  }
+
+  async clockOut(employeeId: string, lat?: number | null, lng?: number | null): Promise<Attendance> {
+    const today = new Date().toISOString().split('T')[0];
+    const existing = (await this.attendanceRepository.findByEmployeeId(employeeId)).find((a) => a.date === today);
+    if (!existing) throw new Error('لم يتم تسجيل حضور اليوم بعد');
+    const updated = await this.attendanceRepository.update(existing.id, {
+      check_out: new Date().toTimeString().split(' ')[0],
+      check_out_lat: lat ?? null,
+      check_out_lng: lng ?? null
+    });
+    await queueOfflineWrite('attendance', 'update', existing.id, updated);
+    return updated;
+  }
 
   async getEmployees(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Employee>> {
     return await this.employeeRepository.findAll(filter, params);
@@ -46,10 +78,26 @@ export class HRService implements IHRService {
   }
 
   async createPayrollRun(payroll: Omit<PayrollRun, 'id' | 'created_at' | 'updated_at'>): Promise<PayrollRun> {
-    // Mirrors HR.tsx handleRunPayroll's formula: net = base + allowances - deductions,
-    // computed fresh here rather than trusting the caller-supplied net_pay.
-    const netPay = Number(payroll.base) + Number(payroll.allowances) - Number(payroll.deductions);
-    const newPayrollRun = await this.payrollRunRepository.create({ ...payroll, net_pay: netPay });
+    // Bonuses/punishments recorded against this employee during the payroll
+    // month are folded into net_pay — previously tracked in their own tables
+    // (via Tasks.tsx) but never actually applied to a payroll run.
+    const [bonuses, punishments] = await Promise.all([
+      this.bonusRepository.findByEmployeeId(payroll.employee_id),
+      this.punishmentRepository.findByEmployeeId(payroll.employee_id)
+    ]);
+    const bonusesTotal = bonuses.filter((b) => b.date.startsWith(payroll.month)).reduce((sum, b) => sum + Number(b.amount), 0);
+    const punishmentsTotal = punishments.filter((p) => p.date.startsWith(payroll.month)).reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // Mirrors HR.tsx handleRunPayroll's formula: net = base + allowances -
+    // deductions, computed fresh here rather than trusting the
+    // caller-supplied net_pay, now also folding in bonuses/punishments.
+    const netPay = Number(payroll.base) + Number(payroll.allowances) - Number(payroll.deductions) + bonusesTotal - punishmentsTotal;
+    const newPayrollRun = await this.payrollRunRepository.create({
+      ...payroll,
+      net_pay: netPay,
+      bonuses_total: bonusesTotal,
+      punishments_total: punishmentsTotal
+    });
     await queueOfflineWrite('payroll_runs', 'insert', newPayrollRun.id, newPayrollRun);
 
     // Journal entry, mirroring HR.tsx handleRunPayroll: debit the Salaries

@@ -19,7 +19,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<boolean>;
-  signInClient: (clientId: string) => Promise<void>;
+  signInClient: (clientId: string, pin: string) => Promise<void>;
   registerClient: (clientId: string, email: string, password: string, name: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   checkPermission: (module: string, action: 'view' | 'add' | 'edit' | 'delete') => boolean;
@@ -340,12 +340,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return !!profile.permissions?.[module]?.[action];
   };
 
-  const signInClient = async (clientId: string) => {
+  const signInClient = async (clientId: string, pin: string) => {
     setLoading(true);
     try {
-      // Use CRM service to authenticate by client_id only
+      // Use CRM service to authenticate by client_id + PIN (second factor)
       const { CRMService } = await import('./crm-service');
-      const result = await CRMService.authenticateByClientId(clientId);
+      const result = await CRMService.authenticateByClientId(clientId, pin);
       
       if (!result.success) {
         throw new Error(result.error || 'فشل تسجيل الدخول');

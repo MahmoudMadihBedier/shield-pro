@@ -30,17 +30,22 @@ export const CashVouchers: React.FC = () => {
 
   const canAdd = checkPermission('accounting', 'add');
   const scopeWarehouseId = profile?.warehouse_id || null;
+  // profile.permissions is a generic {module: {action: boolean}} map built
+  // from whatever's granted in role_permissions — 'view_all' isn't part of
+  // checkPermission's typed view/add/edit/delete union, so it's read directly.
+  const canSeeAllBranches = profile?.role_name === 'Master Admin' ||
+    !!(profile?.permissions?.['reports'] as Record<string, boolean> | undefined)?.['view_all'];
 
   const loadData = useCallback(async () => {
     const [accs, whs, list] = await Promise.all([
       RepositoryFactory.getAccountRepository().findAll(undefined, { page: 1, limit: 200 }),
       RepositoryFactory.getWarehouseRepository().findActive(),
-      accountingService.getCashVouchers(checkPermission('reports', 'view_all') ? null : scopeWarehouseId)
+      accountingService.getCashVouchers(canSeeAllBranches ? null : scopeWarehouseId)
     ]);
     setAccounts(accs.data.filter((a: any) => a.category === 'cash' || a.category === 'bank'));
     setWarehouses(whs);
     setVouchers(list.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-  }, [accountingService, scopeWarehouseId, checkPermission]);
+  }, [accountingService, scopeWarehouseId, canSeeAllBranches]);
 
   useEffect(() => { loadData(); }, [loadData]);
 

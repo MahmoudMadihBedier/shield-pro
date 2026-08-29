@@ -19,6 +19,7 @@ export const Auth: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [clientId, setClientId] = useState('');
+  const [clientPin, setClientPin] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedClientId, setCopiedClientId] = useState(false);
   
@@ -34,10 +35,14 @@ export const Auth: React.FC = () => {
         error('يرجى إدخال معرف العميل');
         return;
       }
-      
+      if (!clientPin.trim()) {
+        error('يرجى إدخال الرقم السري (PIN)');
+        return;
+      }
+
       setLoading(true);
       try {
-        await signInClient(clientId);
+        await signInClient(clientId, clientPin);
         success('تم تسجيل الدخول بنجاح!');
       } catch (err: any) {
         error(err.message || 'فشل تسجيل الدخول');
@@ -398,6 +403,25 @@ export const Auth: React.FC = () => {
                         <span className="text-xs font-bold">WA</span>
                       </motion.button>
                     </div>
+                  </div>
+                </FormField>
+
+                <FormField
+                  label="الرقم السري (PIN)"
+                  required
+                  helpText="الرقم السري الذي حصلت عليه من الشركة"
+                >
+                  <div className="relative rounded-md shadow-sm">
+                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                      <Lock className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      value={clientPin}
+                      onChange={(e) => setClientPin(e.target.value)}
+                      className="block w-full pr-10 border rounded-md py-2 px-3 focus:outline-none focus:ring-2 focus:ring-green-500 sm:text-sm text-left LTR-input font-mono border-gray-300"
+                      placeholder="••••••"
+                    />
                   </div>
                 </FormField>
 

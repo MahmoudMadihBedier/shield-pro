@@ -1,6 +1,14 @@
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { DistributionOrder } from '../../core/domain/entities';
+import { assertSegregationOfDuties } from './segregation-of-duties-guard';
+import { ApprovalRuleEngine } from './approval-rule-engine';
+import { NotificationService } from './notification-service';
+
+// The fixed Master Admin role id, already used as a sentinel throughout
+// this codebase (is_master_admin(), etc.) — used here to notify "the
+// admins" as a role rather than a specific person.
+const MASTER_ADMIN_ROLE_ID = '88888888-8888-8888-8888-888888888888';
 
 // Main-warehouse -> branch distribution: request -> admin approval -> ship
 // (deduct main warehouse stock, "in transit") -> branch physical count ->
@@ -12,6 +20,8 @@ export class DistributionService {
   private orderRepository = RepositoryFactory.getDistributionOrderRepository();
   private lineRepository = RepositoryFactory.getDistributionOrderLineRepository();
   private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
+  private approvalRuleEngine = new ApprovalRuleEngine();
+  private notificationService = new NotificationService();
 
   async createOrder(
     fromWarehouseId: string,
@@ -38,6 +48,14 @@ export class DistributionService {
         received_qty: null
       });
       await queueOfflineWrite('distribution_order_lines', 'insert', newLine.id, newLine);
+
+      // Advisory (Phase 2.2) — evaluated and logged so the Administrator's
+      // "exceptions needing attention" view can distinguish routine requests
+      // from ones that genuinely need a human look, without this yet
+      // bypassing the approval step itself (see migration comment).
+      await this.approvalRuleEngine.evaluate(
+        'distribution_order', requestedBy, line.item_id, Math.abs(line.qty), 'distribution_orders', order.id
+      );
     }
 
     return order;
@@ -50,9 +68,7 @@ export class DistributionService {
   async approveOrder(orderId: string, approvedBy: string): Promise<DistributionOrder> {
     const order = await this.orderRepository.findById(orderId);
     if (!order) throw new Error('طلب التوزيع غير موجود');
-    if (order.requested_by === approvedBy) {
-      throw new Error('لا يمكن لمن أنشأ الطلب اعتماده بنفسه');
-    }
+    assertSegregationOfDuties({ requestedBy: order.requested_by, actingUserId: approvedBy, action: 'اعتماد طلب التوزيع' });
     const updated = await this.orderRepository.update(orderId, {
       status: 'approved',
       approved_by: approvedBy,
@@ -115,9 +131,7 @@ export class DistributionService {
     const order = await this.orderRepository.findById(orderId);
     if (!order) throw new Error('طلب التوزيع غير موجود');
     if (order.status !== 'in_transit') throw new Error('لا يمكن تأكيد الاستلام قبل الشحن');
-    if (order.requested_by === receivedBy) {
-      throw new Error('لا يمكن لمن أرسل الشحنة تأكيد استلامها بنفسه');
-    }
+    assertSegregationOfDuties({ requestedBy: order.requested_by, actingUserId: receivedBy, action: 'تأكيد استلام الشحنة' });
 
     const lines = await this.lineRepository.findByOrderId(orderId);
     let matched = true;
@@ -150,6 +164,17 @@ export class DistributionService {
       received_at: new Date().toISOString()
     });
     await queueOfflineWrite('distribution_orders', 'update', orderId, updated);
+
+    if (!matched) {
+      await this.notificationService.notifyRole(
+        MASTER_ADMIN_ROLE_ID,
+        'system',
+        'فرق في استلام شحنة توزيع',
+        `تم رصد فرق بين الكمية المشحونة والمستلمة في الطلب ${order.order_no} — يحتاج مراجعة وحل.`,
+        { order_id: order.id, order_no: order.order_no }
+      );
+    }
+
     return updated;
   }
 
