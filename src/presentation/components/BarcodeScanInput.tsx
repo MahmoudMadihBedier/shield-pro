@@ -54,8 +54,7 @@ export const BarcodeScanInput: React.FC<BarcodeScanInputProps> = ({ items, onRes
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleManualSubmit = () => {
     if (!manualCode.trim()) return;
     handleCode(manualCode);
     setManualCode('');
@@ -109,19 +108,29 @@ export const BarcodeScanInput: React.FC<BarcodeScanInputProps> = ({ items, onRes
 
   return (
     <div className="flex items-center gap-2">
-      <form onSubmit={handleManualSubmit} className="flex-1 flex items-center gap-2">
+      {/* Not a <form>: this control is rendered inside the module's own form
+          (e.g. Sales), and nesting <form> elements is invalid HTML. Enter is
+          handled on the input directly, and its default (which would submit
+          the outer form) is suppressed. */}
+      <div className="flex-1 flex items-center gap-2">
         <div className="relative flex-1">
           <ScanLine className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
             value={manualCode}
             onChange={(e) => setManualCode(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleManualSubmit();
+              }
+            }}
             placeholder="امسح الباركود بالجهاز أو أدخله يدوياً ثم Enter"
             className="w-full rounded border border-gray-300 py-2 pr-9 pl-3 text-sm font-mono focus:outline-none focus:ring-blue-500 text-left"
             autoComplete="off"
           />
         </div>
-      </form>
+      </div>
       <button
         type="button"
         onClick={() => setCameraOpen(true)}

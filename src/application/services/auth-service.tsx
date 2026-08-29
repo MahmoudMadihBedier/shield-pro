@@ -81,10 +81,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       last_seen_at: new Date().toISOString()
     };
     localStorage.setItem('erp_profile', JSON.stringify(updated));
-    // role_name/permissions are derived client-side (joined from roles/role_permissions),
-    // not real columns on public.users — sending them makes PostgREST reject the
-    // whole write with PGRST204 ("column not found in schema cache").
-    const { role_name, permissions, ...userRow } = updated;
+    // role_name/permissions/is_client_user are derived client-side (joined from
+    // roles/role_permissions), not real columns on public.users — sending them
+    // makes PostgREST reject the whole write with PGRST204 ("column not found
+    // in schema cache"). sync-service also whitelists users columns on push as
+    // a backstop, but keep the queued payload (and its audit entry) clean here.
+    const { role_name, permissions, is_client_user, ...userRow } = updated;
     await queueOfflineWrite('users', 'update', userRow.id, userRow);
   };
 
