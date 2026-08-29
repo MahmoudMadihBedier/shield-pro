@@ -680,7 +680,7 @@ function ERPAppContent() {
       </motion.div>
     </div>
   );
-};
+}
 
 function App() {
   return (
