@@ -14,9 +14,22 @@ export class ManufacturingService implements IManufacturingService {
   private productionRequestRepository = RepositoryFactory.getProductionRequestRepository();
   private warehouseRepository = RepositoryFactory.getWarehouseRepository();
 
+  // A finished/intermediate item can only be produced once its bill of
+  // materials is defined — the BOM is what tells the system which raw
+  // materials to withdraw and how to cost the run. Checked here (service
+  // layer) so every entry point (production request, ad-hoc batch) is
+  // guarded, not just one screen.
+  async itemHasRecipe(itemId: string, recipeType: 'batch' | 'packaging'): Promise<boolean> {
+    const recipes = await this.itemRecipeRepository.findByParentItemId(itemId);
+    return recipes.some((r) => r.recipe_type === recipeType);
+  }
+
   // ---- Production requests (factory employee -> purchasing manager) ------
 
   async createProductionRequest(itemId: string, requestedQty: number, requestedBy: string, rawMaterialWarehouseId: string, notes?: string): Promise<ProductionRequest> {
+    if (!(await this.itemHasRecipe(itemId, 'batch'))) {
+      throw new Error('لا يمكن طلب إنتاج هذا الصنف قبل تعريف تركيبته (BOM) لمرحلة الخلط. عرّف التركيبة أولاً من تبويب "تركيبات وجداول المواد".');
+    }
     const request = await this.productionRequestRepository.create({
       item_id: itemId,
       requested_qty: requestedQty,
@@ -136,6 +149,9 @@ export class ManufacturingService implements IManufacturingService {
   // production_consumptions row per component. Actual stock movements only
   // happen later, in completeBatch, using these stored quantities.
   async createBatch(batch: Omit<ProductionBatch, 'id' | 'created_at' | 'updated_at'>): Promise<ProductionBatch> {
+    if (!(await this.itemHasRecipe(batch.item_id, 'batch'))) {
+      throw new Error('لا يمكن إنشاء دفعة إنتاج لصنف بدون تركيبة (BOM) معتمدة لمرحلة الخلط.');
+    }
     const newBatch = await this.productionBatchRepository.create(batch);
     await queueOfflineWrite('production_batches', 'insert', newBatch.id, newBatch);
 

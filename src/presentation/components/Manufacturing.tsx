@@ -23,6 +23,7 @@ export const Manufacturing: React.FC = () => {
   const [recipes, setRecipes] = useState<any[]>([]);
   const [productionBatches, setProductionBatches] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0);
 
   // 1. Recipe Editor State
   const [recipeParentId, setRecipeParentId] = useState('');
@@ -78,9 +79,10 @@ export const Manufacturing: React.FC = () => {
       setFillFinishedGood(finished[0].id);
     }
 
-    // Default expected waste
+    // Default expected waste + labour/overhead per produced unit (both admin-set)
     const waste = await getSetting('expected_waste_pct', '0');
     setExpectedWaste(waste);
+    setLaborOverheadPerUnit(Number(await getSetting('labor_overhead_per_unit', '0')) || 0);
   };
 
   // Live total helper for recipe editor
@@ -355,16 +357,27 @@ export const Manufacturing: React.FC = () => {
     }
   };
 
-  // Cost analysis helper
+  // Cost analysis helper. Recipe quantities are authored in the component's
+  // own stock unit of measure, so cost = per-unit quantity x that
+  // component's cost_price. Components with no cost_price set are listed
+  // separately instead of being faked with a fallback price.
   const calculateRealCostPerUnit = (item: any) => {
     const bom = recipes.filter((r: any) => r.parent_item_id === item.id);
-    let totalMatCost = 0;
+    let materialCost = 0;
+    const missing: string[] = [];
     bom.forEach((component: any) => {
       const compItem = items.find((i: any) => i.id === component.component_item_id);
-      const price = compItem?.default_price || 1.5;
-      totalMatCost += Number(component.quantity_or_percentage) * Number(price);
+      const unitCost = compItem?.cost_price;
+      if (unitCost == null || Number.isNaN(Number(unitCost))) {
+        missing.push(compItem?.name || 'مكوّن غير معروف');
+        return;
+      }
+      const perUnitQty = component.mode === 'percentage'
+        ? Number(component.quantity_or_percentage) / 100
+        : Number(component.quantity_or_percentage);
+      materialCost += perUnitQty * Number(unitCost);
     });
-    return totalMatCost;
+    return { materialCost, missing, totalCost: materialCost + laborOverheadPerUnit };
   };
 
   return (
@@ -477,7 +490,13 @@ export const Manufacturing: React.FC = () => {
               {/* Ingredients rows */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center bg-gray-50 p-2 rounded border">
-                  <span className="text-xs font-bold text-gray-600">المكونات الداخلة بالتركيبة (المكون + الكمية/النسبة):</span>
+                  <span className="text-xs font-bold text-gray-600">
+                    المكونات الداخلة بالتركيبة —{' '}
+                    {recipeMode === 'percentage'
+                      ? 'النسبة المئوية من وزن/حجم الوحدة الواحدة (المجموع = 100%)'
+                      : 'الكمية الثابتة لكل وحدة منتجة، بوحدة تخزين المادة نفسها'}
+                    :
+                  </span>
                   <button
                     type="button"
                     onClick={handleAddIngredientRow}
@@ -558,23 +577,38 @@ export const Manufacturing: React.FC = () => {
 
           {/* Recipe Cost Estimation */}
           <div className="bg-white p-5 rounded-lg border shadow h-fit">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">تقدير التكاليف الفعلي (Costing)</h3>
+            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">تقدير التكلفة لكل وحدة (Costing)</h3>
             <div className="space-y-4">
               <div className="text-xs text-gray-500 leading-relaxed">
-                يقوم محرك التكاليف بضرب نسب ومكونات الـ BOM بأسعار شراء المواد المسجلة لتقدير تكلفة الصنف.
+                لكل صنف: <span className="font-semibold">تكلفة المواد</span> = مجموع (كمية المكوّن في التركيبة × تكلفة شراء المكوّن
+                <span dir="ltr"> cost_price</span>)، ثم يُضاف <span className="font-semibold">تحميل العمالة والتشغيل</span> لكل وحدة
+                (<span dir="ltr">{laborOverheadPerUnit.toFixed(2)}</span> ج.م، يُضبط من الإعدادات). أدخل كميات التركيبة بوحدة تخزين المادة نفسها.
               </div>
               {items.filter((i: any) => i.type === 'finished_good' || i.type === 'intermediate').map((i: any) => {
-                const cost = calculateRealCostPerUnit(i);
+                const c = calculateRealCostPerUnit(i);
                 return (
-                  <div key={i.id} className="p-3 border rounded bg-gray-50 flex justify-between items-center">
-                    <div>
-                      <div className="font-semibold text-gray-800 text-sm">{i.name}</div>
-                      <div className="text-xs text-gray-500">النوع: {typesArabic[i.type]}</div>
+                  <div key={i.id} className="p-3 border rounded bg-gray-50 space-y-1.5">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-semibold text-gray-800 text-sm">{i.name}</div>
+                        <div className="text-xs text-gray-500">النوع: {typesArabic[i.type]}</div>
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-blue-600 font-mono text-base">{c.totalCost.toFixed(2)} ج.م</div>
+                        <div className="text-[10px] text-gray-400">التكلفة التقديرية للوحدة</div>
+                      </div>
                     </div>
-                    <div className="text-left">
-                      <div className="font-bold text-blue-600 font-mono text-base">{cost.toFixed(2)} ج.م</div>
-                      <div className="text-[10px] text-gray-400">تكلفة المواد التقريبية</div>
+                    <div className="flex justify-between text-[11px] text-gray-500 font-mono">
+                      <span>تكلفة المواد</span><span>{c.materialCost.toFixed(2)} ج.م</span>
                     </div>
+                    <div className="flex justify-between text-[11px] text-gray-500 font-mono">
+                      <span>عمالة وتشغيل / وحدة</span><span>{laborOverheadPerUnit.toFixed(2)} ج.م</span>
+                    </div>
+                    {c.missing.length > 0 && (
+                      <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                        التكلفة غير محددة لـ: {c.missing.join('، ')} — سجّل سعر الشراء لهذه المواد ليكتمل التقدير.
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -85,6 +85,7 @@ export interface IAccountingService {
 export interface IManufacturingService {
   getRecipes(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ItemRecipe>>;
   createRecipe(recipe: Omit<ItemRecipe, 'id' | 'created_at' | 'updated_at'>): Promise<ItemRecipe>;
+  itemHasRecipe(itemId: string, recipeType: 'batch' | 'packaging'): Promise<boolean>;
   getBatches(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionBatch>>;
   createBatch(batch: Omit<ProductionBatch, 'id' | 'created_at' | 'updated_at'>): Promise<ProductionBatch>;
   updateBatch(id: string, batch: Partial<ProductionBatch>): Promise<ProductionBatch>;
