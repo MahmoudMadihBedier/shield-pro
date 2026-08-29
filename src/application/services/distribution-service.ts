@@ -3,6 +3,12 @@ import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { DistributionOrder } from '../../core/domain/entities';
 import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 import { ApprovalRuleEngine } from './approval-rule-engine';
+import { NotificationService } from './notification-service';
+
+// The fixed Master Admin role id, already used as a sentinel throughout
+// this codebase (is_master_admin(), etc.) — used here to notify "the
+// admins" as a role rather than a specific person.
+const MASTER_ADMIN_ROLE_ID = '88888888-8888-8888-8888-888888888888';
 
 // Main-warehouse -> branch distribution: request -> admin approval -> ship
 // (deduct main warehouse stock, "in transit") -> branch physical count ->
@@ -15,6 +21,7 @@ export class DistributionService {
   private lineRepository = RepositoryFactory.getDistributionOrderLineRepository();
   private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
   private approvalRuleEngine = new ApprovalRuleEngine();
+  private notificationService = new NotificationService();
 
   async createOrder(
     fromWarehouseId: string,
@@ -157,6 +164,17 @@ export class DistributionService {
       received_at: new Date().toISOString()
     });
     await queueOfflineWrite('distribution_orders', 'update', orderId, updated);
+
+    if (!matched) {
+      await this.notificationService.notifyRole(
+        MASTER_ADMIN_ROLE_ID,
+        'system',
+        'فرق في استلام شحنة توزيع',
+        `تم رصد فرق بين الكمية المشحونة والمستلمة في الطلب ${order.order_no} — يحتاج مراجعة وحل.`,
+        { order_id: order.id, order_no: order.order_no }
+      );
+    }
+
     return updated;
   }
 

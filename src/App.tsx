@@ -8,6 +8,7 @@ import { ToastProvider } from './presentation/components/ui/Toast';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
 import { db, type OfflineQueueItem } from './infrastructure/database/dexie';
 import { useLocationTracking } from './application/hooks/use-location-tracking';
+import { NotificationBell } from './presentation/components/NotificationBell';
 import {
   ShieldAlert,
   Menu,
@@ -25,7 +26,6 @@ import {
   Wifi,
   WifiOff,
   RefreshCw,
-  Bell,
   Smartphone,
   MapPin,
   FileText,
@@ -46,6 +46,7 @@ const RepTracking = lazy(() => import('./presentation/components/RepTracking').t
 const RepLedger = lazy(() => import('./presentation/components/RepLedger').then(m => ({ default: m.RepLedger })));
 const DistributionOrders = lazy(() => import('./presentation/components/DistributionOrders').then(m => ({ default: m.DistributionOrders })));
 const FraudAndApprovals = lazy(() => import('./presentation/components/FraudAndApprovals').then(m => ({ default: m.FraudAndApprovals })));
+const InventoryControls = lazy(() => import('./presentation/components/InventoryControls').then(m => ({ default: m.InventoryControls })));
 const Dashboard = lazy(() => import('./presentation/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 
 const ModuleLoadingFallback = () => (
@@ -368,6 +369,20 @@ function ERPAppContent() {
             </motion.button>
           )}
 
+          {checkPermission('inventory', 'view') && (
+            <motion.button
+              onClick={() => setActiveTab('inventory_controls')}
+              whileHover={{ scale: 1.02, x: 4 }}
+              whileTap={{ scale: 0.98 }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-semibold transition ${
+                activeTab === 'inventory_controls' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+              }`}
+            >
+              <Layers className="h-5 w-5" />
+              <span>ضوابط المخزون (QC/جرد)</span>
+            </motion.button>
+          )}
+
           {checkPermission('settings', 'view') && (
             <motion.button
               onClick={() => setActiveTab('settings')}
@@ -450,9 +465,7 @@ function ERPAppContent() {
               </span>
             )}
 
-            <div className="relative">
-              <Bell className="h-6 w-6 text-gray-400 hover:text-gray-600 cursor-pointer" />
-            </div>
+            <NotificationBell />
           </div>
         </header>
 
@@ -637,6 +650,17 @@ function ERPAppContent() {
                   transition={{ duration: 0.2 }}
                 >
                   <FraudAndApprovals />
+                </motion.div>
+              )}
+              {activeTab === 'inventory_controls' && (
+                <motion.div
+                  key="inventory_controls"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <InventoryControls />
                 </motion.div>
               )}
               {activeTab === 'settings' && (

@@ -218,7 +218,9 @@ export class ManufacturingService implements IManufacturingService {
     const batch = await this.productionBatchRepository.findById(batchId);
     if (!batch) throw new Error('Production batch not found');
     if (batch.status !== 'pending_qc') throw new Error('هذه الدفعة ليست بانتظار فحص الجودة');
-    assertSegregationOfDuties({ requestedBy: batch.created_by, actingUserId: releasedBy, action: 'اعتماد/رفض فحص الجودة' });
+    if (batch.created_by) {
+      assertSegregationOfDuties({ requestedBy: batch.created_by, actingUserId: releasedBy, action: 'اعتماد/رفض فحص الجودة' });
+    }
 
     if (!approve) {
       const rejected = await this.productionBatchRepository.update(batchId, {

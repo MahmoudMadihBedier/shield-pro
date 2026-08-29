@@ -10,7 +10,6 @@ export class StockCountService {
   private sessionRepository = RepositoryFactory.getStockCountSessionRepository();
   private lineRepository = RepositoryFactory.getStockCountLineRepository();
   private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
-  private itemRepository = RepositoryFactory.getItemRepository();
 
   // Opens a session for a warehouse, pre-populated with the current
   // system-recorded stock for every item that has ever moved through it —

@@ -18,6 +18,10 @@ import { DistributionService } from './distribution-service';
 import { AnalyticsService } from './analytics-service';
 import { ApprovalRuleEngine } from './approval-rule-engine';
 import { FraudDetectionService } from './fraud-detection-service';
+import { ReturnWriteoffService } from './return-writeoff-service';
+import { StockCountService } from './stock-count-service';
+import { NotificationService } from './notification-service';
+import { TraceabilityService } from './traceability-service';
 
 // Singleton instances
 let instances: any = {};
@@ -119,6 +123,34 @@ export class ServiceFactory {
       instances.fraudDetectionService = new FraudDetectionService();
     }
     return instances.fraudDetectionService;
+  }
+
+  static getReturnWriteoffService(): ReturnWriteoffService {
+    if (!instances.returnWriteoffService) {
+      instances.returnWriteoffService = new ReturnWriteoffService();
+    }
+    return instances.returnWriteoffService;
+  }
+
+  static getStockCountService(): StockCountService {
+    if (!instances.stockCountService) {
+      instances.stockCountService = new StockCountService();
+    }
+    return instances.stockCountService;
+  }
+
+  static getNotificationService(): NotificationService {
+    if (!instances.notificationService) {
+      instances.notificationService = new NotificationService();
+    }
+    return instances.notificationService;
+  }
+
+  static getTraceabilityService(): TraceabilityService {
+    if (!instances.traceabilityService) {
+      instances.traceabilityService = new TraceabilityService();
+    }
+    return instances.traceabilityService;
   }
 
   static getAuthService(): IAuthService {

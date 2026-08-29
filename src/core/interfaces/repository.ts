@@ -15,7 +15,7 @@ import {
   RepStockLedger, RepCashLedger, RepCloseoutSession, ProductionRequest,
   DistributionOrder, DistributionOrderLine, CashVoucher,
   ApprovalRule, ApprovalRuleLog, FraudFlag,
-  ReturnWriteoffRequest, StockCountSession, StockCountLine
+  ReturnWriteoffRequest, StockCountSession, StockCountLine, InternalNotification
 } from '../domain/entities';
 
 // Base Repository Interface
@@ -240,4 +240,8 @@ export interface IStockCountSessionRepository extends IRepository<StockCountSess
 
 export interface IStockCountLineRepository extends IRepository<StockCountLine> {
   findBySessionId(sessionId: string): Promise<StockCountLine[]>;
+}
+
+export interface IInternalNotificationRepository extends IRepository<InternalNotification> {
+  findForUser(userId: string, roleId: string | null): Promise<InternalNotification[]>;
 }

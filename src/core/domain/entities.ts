@@ -221,6 +221,10 @@ export interface PurchaseInvoiceLine extends BaseEntity {
   unit_price: number;
   discount: number;
   line_total: number;
+  // Phase 1.2 — links this raw-material receipt to the supplier's own lot,
+  // completing the recall trail: purchase lot -> production_consumptions ->
+  // production_batches -> every unit sold from that batch.
+  supplier_lot_number?: string | null;
 }
 
 // Accounting Entities
@@ -307,6 +311,11 @@ export interface ProductionBatch extends BaseEntity {
   qc_released_by?: string | null;
   qc_released_at?: string | null;
   qc_rejection_reason?: string | null;
+  // Who produced the batch — needed for the QC segregation-of-duties check
+  // (releaser must differ from producer). Real column on every table
+  // (created_by uuid default auth.uid()) but not part of the shared
+  // BaseEntity type; declared here since this is the first place it's read.
+  created_by?: string | null;
 }
 
 // Phase 2.8 — formal return/write-off instead of goods silently
@@ -596,6 +605,20 @@ export interface FraudFlag extends BaseEntity {
   status: 'open' | 'reviewed' | 'dismissed';
   reviewed_by?: string | null;
   reviewed_at?: string | null;
+}
+
+// Phase 2.6 — internal staff alerts (distinct from ClientNotification, which
+// is customer-facing). Targeted at a specific user OR a whole role (e.g.
+// every branch accountant), observer-style: whoever's listening sees it.
+export interface InternalNotification extends BaseEntity {
+  user_id?: string | null;
+  role_id?: string | null;
+  type: 'low_stock' | 'pending_approval' | 'overdue_customer' | 'missed_closeout' | 'fraud_flag' | 'qc_pending' | 'system';
+  title: string;
+  message: string;
+  data?: Record<string, unknown> | null;
+  is_read: boolean;
+  read_at?: string | null;
 }
 
 // Rep stock/cash-in-hand ledger + daily close-out (Phase 2.4 — the highest

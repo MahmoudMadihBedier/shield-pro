@@ -1,6 +1,9 @@
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { FraudFlag } from '../../core/domain/entities';
+import { NotificationService } from './notification-service';
+
+const MASTER_ADMIN_ROLE_ID = '88888888-8888-8888-8888-888888888888';
 
 // Phase 2.3 of SHIELD_PRO_REFACTOR_MASTER_PLAN.md — a simple, rule-based
 // heuristic (not ML) to catch "goods shuttling back and forth" patterns
@@ -11,6 +14,7 @@ import { FraudFlag } from '../../core/domain/entities';
 export class FraudDetectionService {
   private repStockLedgerRepository = RepositoryFactory.getRepStockLedgerRepository();
   private fraudFlagRepository = RepositoryFactory.getFraudFlagRepository();
+  private notificationService = new NotificationService();
 
   // Flags a rep/item pair where a high share of what was issued came back
   // (returned) rather than being sold — a pattern consistent with goods
@@ -51,6 +55,14 @@ export class FraudDetectionService {
       });
       await queueOfflineWrite('fraud_flags', 'insert', flag.id, flag);
       newFlags.push(flag);
+
+      await this.notificationService.notifyRole(
+        MASTER_ADMIN_ROLE_ID,
+        'fraud_flag',
+        'نمط حركة مخزون مشبوه',
+        `تم رصد نمط تردد بضاعة بين الصرف والإرجاع يستحق المراجعة (صادر: ${issued}, راجع: ${returned}).`,
+        { flag_id: flag.id, rep_user_id: repUserId, item_id: itemId }
+      );
     }
 
     return newFlags;

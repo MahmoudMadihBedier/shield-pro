@@ -64,6 +64,7 @@ class ERPDatabase extends Dexie {
   return_writeoff_requests!: Table<any, string>;
   stock_count_sessions!: Table<any, string>;
   stock_count_lines!: Table<any, string>;
+  internal_notifications!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -163,6 +164,11 @@ class ERPDatabase extends Dexie {
       return_writeoff_requests: 'id, status, requested_by, item_id',
       stock_count_sessions: 'id, warehouse_id, status',
       stock_count_lines: 'id, session_id, item_id'
+    });
+
+    // v12: Internal staff notifications
+    this.version(12).stores({
+      internal_notifications: 'id, user_id, role_id, is_read'
     });
   }
 }

@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../../infrastructure/database/dexie';
 import { getSetting } from '../../shared/utils/settings-helper';
 import { ProductPerformanceReport } from './ProductPerformanceReport';
+import { ServiceFactory } from '../../application/services/service-factory';
+import { ExcelIOService } from '../../application/services/excel-io-service';
 import {
   FileText,
   DollarSign,
   Percent,
   Activity,
-  TrendingUp
+  TrendingUp,
+  Download
 } from 'lucide-react';
 
 export const Reports: React.FC = () => {
@@ -20,13 +23,11 @@ export const Reports: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
   const [productionBatches, setProductionBatches] = useState<any[]>([]);
-  const [customers, setCustomers] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [salesInvoices, setSalesInvoices] = useState<any[]>([]);
   const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
-  const [receiptVouchers, setReceiptVouchers] = useState<any[]>([]);
   const [paymentVouchers, setPaymentVouchers] = useState<any[]>([]);
   const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0.5);
+  const [customerAging, setCustomerAging] = useState<{ customer_id: string; name: string; bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90_plus: number; total: number }[]>([]);
 
   // Date Filters
   const [startDate, setStartDate] = useState('');
@@ -42,11 +43,8 @@ export const Reports: React.FC = () => {
     const listItems = await db.items.toArray();
     const listMovs = await db.stock_movements.toArray();
     const listBatches = await db.production_batches.toArray();
-    const listCusts = await db.customers.toArray();
     const listSupps = await db.suppliers.toArray();
-    const listSalesInvs = await db.sales_invoices.toArray();
     const listPurInvs = await db.purchase_invoices.toArray();
-    const listRecVouch = await db.receipt_vouchers.toArray();
     const listPayVouch = await db.payment_vouchers.toArray();
     const overheadPerUnit = Number(await getSetting('labor_overhead_per_unit', '0.5'));
 
@@ -55,13 +53,26 @@ export const Reports: React.FC = () => {
     setItems(listItems);
     setStockMovements(listMovs);
     setProductionBatches(listBatches);
-    setCustomers(listCusts);
     setSuppliers(listSupps);
-    setSalesInvoices(listSalesInvs);
     setPurchaseInvoices(listPurInvs);
-    setReceiptVouchers(listRecVouch);
     setPaymentVouchers(listPayVouch);
     setLaborOverheadPerUnit(overheadPerUnit);
+
+    // Real date-based aging (was previously a fixed 60/30/10% estimate,
+    // not actually based on invoice age at all).
+    const aging = await ServiceFactory.getSalesService().getCustomerAgingReport();
+    setCustomerAging(aging);
+  };
+
+  const handleExportAging = () => {
+    ExcelIOService.exportToCsv('customer_aging_report', customerAging.map((c) => ({
+      العميل: c.name,
+      'الإجمالي المستحق': c.total,
+      '0-30 يوم': c.bucket_0_30,
+      '31-60 يوم': c.bucket_31_60,
+      '61-90 يوم': c.bucket_61_90,
+      'أكثر من 90 يوم': c.bucket_90_plus
+    })));
   };
 
   // Filter transactions by date
@@ -110,25 +121,6 @@ export const Reports: React.FC = () => {
 
   // 2. AR & AP Aging calculations
   // Outstanding balances list grouped by customers
-  const getCustomersAging = () => {
-    return customers.map(c => {
-      const invoicesTotal = salesInvoices
-        .filter(i => i.customer_id === c.id)
-        .reduce((sum, i) => sum + Number(i.total), 0);
-      const paidTotal = receiptVouchers
-        .filter(v => v.customer_id === c.id)
-        .reduce((sum, v) => sum + Number(v.amount), 0);
-      const outstanding = Number(c.opening_balance) + invoicesTotal - paidTotal;
-      return {
-        ...c,
-        outstanding,
-        aging_0_30: outstanding * 0.6, // estimated aging bins
-        aging_31_90: outstanding * 0.3,
-        aging_90_plus: outstanding * 0.1
-      };
-    }).filter(c => c.outstanding > 0);
-  };
-
   const getSuppliersAging = () => {
     return suppliers.map(s => {
       const invoicesTotal = purchaseInvoices
@@ -312,9 +304,14 @@ export const Reports: React.FC = () => {
           <div className="space-y-8">
             {/* Customer aging */}
             <div>
-              <div className="border-b pb-3 mb-4">
-                <h3 className="text-lg font-bold text-gray-800">أعمار ديون العملاء المدينين (دائنون / مدينون)</h3>
-                <p className="text-xs text-gray-500 mt-1">تتبع الفترات الزمنية للديون المستحقة على العملاء للتسديد</p>
+              <div className="border-b pb-3 mb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">أعمار ديون العملاء المدينين (دائنون / مدينون)</h3>
+                  <p className="text-xs text-gray-500 mt-1">محسوبة فعلياً من تاريخ كل فاتورة غير مسددة، وليست تقديراً</p>
+                </div>
+                <button onClick={handleExportAging} disabled={customerAging.length === 0} className="flex items-center gap-1 text-xs bg-gray-100 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-200 disabled:opacity-50">
+                  <Download className="h-3.5 w-3.5" /> تصدير Excel
+                </button>
               </div>
 
               <div className="overflow-x-auto">
@@ -323,19 +320,21 @@ export const Reports: React.FC = () => {
                     <tr className="text-xs font-bold text-gray-500">
                       <th className="py-3 px-4">اسم العميل</th>
                       <th className="py-3 px-4 text-center">المستحق الإجمالي</th>
-                      <th className="py-3 px-4 text-center text-green-600">1 - 30 يوم</th>
-                      <th className="py-3 px-4 text-center text-yellow-600">31 - 90 يوم</th>
+                      <th className="py-3 px-4 text-center text-green-600">0 - 30 يوم</th>
+                      <th className="py-3 px-4 text-center text-yellow-600">31 - 60 يوم</th>
+                      <th className="py-3 px-4 text-center text-orange-600">61 - 90 يوم</th>
                       <th className="py-3 px-4 text-center text-red-600">أكثر من 90 يوم</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {getCustomersAging().map(c => (
-                      <tr key={c.id} className="hover:bg-gray-50">
+                    {customerAging.map(c => (
+                      <tr key={c.customer_id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
-                        <td className="py-3 px-4 text-center font-bold text-gray-900 font-mono">{c.outstanding.toFixed(2)} ج.م</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_0_30.toFixed(2)} ج.م</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_31_90.toFixed(2)} ج.م</td>
-                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.aging_90_plus.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center font-bold text-gray-900 font-mono">{c.total.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.bucket_0_30.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.bucket_31_60.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.bucket_61_90.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center text-gray-600 font-mono">{c.bucket_90_plus.toFixed(2)} ج.م</td>
                       </tr>
                     ))}
                   </tbody>

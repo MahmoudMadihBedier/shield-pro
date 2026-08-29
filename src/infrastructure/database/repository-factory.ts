@@ -11,7 +11,8 @@ import {
   IRepStockLedgerRepository, IRepCashLedgerRepository, IRepCloseoutSessionRepository,
   IProductionRequestRepository, IDistributionOrderRepository, IDistributionOrderLineRepository,
   ICashVoucherRepository, IApprovalRuleRepository, IApprovalRuleLogRepository, IFraudFlagRepository,
-  IReturnWriteoffRequestRepository, IStockCountSessionRepository, IStockCountLineRepository
+  IReturnWriteoffRequestRepository, IStockCountSessionRepository, IStockCountLineRepository,
+  IInternalNotificationRepository
 } from '../../core/interfaces/repository';
 
 import { BaseRepository } from './base-repository';
@@ -61,6 +62,7 @@ import { FraudFlagRepository } from './repositories/fraud-flag-repository';
 import { ReturnWriteoffRequestRepository } from './repositories/return-writeoff-request-repository';
 import { StockCountSessionRepository } from './repositories/stock-count-session-repository';
 import { StockCountLineRepository } from './repositories/stock-count-line-repository';
+import { InternalNotificationRepository } from './repositories/internal-notification-repository';
 import { IRepository } from '../../core/interfaces/repository';
 import { BaseEntity } from '../../core/domain/entities';
 
@@ -402,6 +404,13 @@ export class RepositoryFactory {
       instances.stockCountLineRepository = new StockCountLineRepository();
     }
     return instances.stockCountLineRepository;
+  }
+
+  static getInternalNotificationRepository(): IInternalNotificationRepository {
+    if (!instances.internalNotificationRepository) {
+      instances.internalNotificationRepository = new InternalNotificationRepository();
+    }
+    return instances.internalNotificationRepository;
   }
 
   // Reset all instances (useful for testing)

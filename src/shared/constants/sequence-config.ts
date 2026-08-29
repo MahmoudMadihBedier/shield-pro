@@ -27,5 +27,6 @@ export const SYNC_TABLES = [
   'production_requests', 'distribution_orders', 'distribution_order_lines',
   'production_lines', 'cash_vouchers',
   'approval_rules', 'approval_rule_log', 'fraud_flags',
-  'return_writeoff_requests', 'stock_count_sessions', 'stock_count_lines'
+  'return_writeoff_requests', 'stock_count_sessions', 'stock_count_lines',
+  'internal_notifications'
 ];

@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { db } from '../../infrastructure/database/dexie';
 import { ServiceFactory } from '../../application/services/service-factory';
+import { ExcelIOService } from '../../application/services/excel-io-service';
 import { formatCurrency } from '../../shared/utils/format';
+import { Download } from 'lucide-react';
 import type { ProductPerformance } from '../../application/services/analytics-service';
 
 // Best/least-selling, profit margin, and quantity-sold-by-production-line —
@@ -43,6 +45,17 @@ export const ProductPerformanceReport: React.FC = () => {
   const bestSelling = [...performance].sort((a, b) => b.qty_sold - a.qty_sold).slice(0, 5);
   const leastSelling = [...performance].sort((a, b) => a.qty_sold - b.qty_sold).slice(0, 5);
 
+  const handleExport = () => {
+    ExcelIOService.exportToCsv(`product_performance_${startDate}_${endDate}`, performance.map((p) => ({
+      المنتج: p.name,
+      'الكمية المباعة': p.qty_sold,
+      الإيراد: p.revenue,
+      التكلفة: p.cost,
+      الربح: p.profit,
+      'هامش الربح %': p.profit_margin_pct.toFixed(1)
+    })));
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -50,6 +63,9 @@ export const ProductPerformanceReport: React.FC = () => {
         <span className="text-gray-400">إلى</span>
         <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border rounded p-2 text-sm" />
         {loading && <span className="text-xs text-gray-400">جاري التحميل...</span>}
+        <button onClick={handleExport} disabled={performance.length === 0} className="flex items-center gap-1 text-xs bg-gray-100 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-200 disabled:opacity-50 mr-auto">
+          <Download className="h-3.5 w-3.5" /> تصدير Excel
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
