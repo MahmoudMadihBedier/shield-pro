@@ -32,7 +32,10 @@ export class PurchaseService implements IPurchaseService {
     lines: Omit<PurchaseInvoiceLine, 'id' | 'created_at' | 'updated_at'>[],
     warehouseId: string
   ): Promise<PurchaseInvoice> {
-    const newInvoice = await this.purchaseInvoiceRepository.create(invoice);
+    // warehouse_id is now persisted on the invoice header (previously it only
+    // lived on the stock_movement rows) so the goods-receipt has a home
+    // branch and the journal legs can be branch-tagged.
+    const newInvoice = await this.purchaseInvoiceRepository.create({ ...invoice, warehouse_id: warehouseId });
     await queueOfflineWrite('purchase_invoices', 'insert', newInvoice.id, newInvoice);
 
     for (const line of lines) {
@@ -60,12 +63,14 @@ export class PurchaseService implements IPurchaseService {
       await queueOfflineWrite('stock_movements', 'insert', movement.id, movement);
     }
 
-    // Journal entry, mirroring Purchases.tsx handleSaveInvoice: debit COGS
-    // for the invoice total, credit Cash (cash purchase) or AP (credit
-    // purchase).
-    const cogsAcc = (await this.accountRepository.findByCategory('cogs'))[0]?.id;
-    if (!cogsAcc) {
-      throw new Error(`تعذر تسجيل القيد المحاسبي لفاتورة الشراء ${newInvoice.invoice_no}: حساب تكلفة البضاعة المباعة (COGS) غير موجود`);
+    // Journal entry: a purchase adds to inventory (an asset), it is not an
+    // immediate expense — debit the 'inventory' account for the invoice
+    // total, credit Cash (cash purchase) or AP (credit purchase). COGS is
+    // recognised later, when the goods are sold. Both legs carry the
+    // receiving branch.
+    const inventoryAcc = (await this.accountRepository.findByCategory('inventory'))[0]?.id;
+    if (!inventoryAcc) {
+      throw new Error(`تعذر تسجيل القيد المحاسبي لفاتورة الشراء ${newInvoice.invoice_no}: حساب المخزون غير موجود`);
     } else if (newInvoice.payment_method === 'cash') {
       const cashAcc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
       if (!cashAcc) {
@@ -74,10 +79,11 @@ export class PurchaseService implements IPurchaseService {
       await postDoubleEntry({
         refTable: 'purchase_invoices',
         refId: newInvoice.id,
-        debitAccountId: cogsAcc,
+        debitAccountId: inventoryAcc,
         creditAccountId: cashAcc,
         amount: newInvoice.total,
-        date: newInvoice.date
+        date: newInvoice.date,
+        warehouseId
       });
     } else if (newInvoice.payment_method === 'credit') {
       const apAcc = (await this.accountRepository.findByCategory('ap'))[0]?.id;
@@ -87,10 +93,11 @@ export class PurchaseService implements IPurchaseService {
       await postDoubleEntry({
         refTable: 'purchase_invoices',
         refId: newInvoice.id,
-        debitAccountId: cogsAcc,
+        debitAccountId: inventoryAcc,
         creditAccountId: apAcc,
         amount: newInvoice.total,
-        date: newInvoice.date
+        date: newInvoice.date,
+        warehouseId
       });
     }
 
