@@ -119,6 +119,41 @@ export class PurchaseService implements IPurchaseService {
     return await this.purchaseInvoiceLineRepository.findByInvoiceId(invoiceId);
   }
 
+  // Real date-based AP aging per supplier — mirrors
+  // SalesService.getCustomerAgingReport. Replaces the fabricated
+  // 70/20/10 % split that used to sit in Reports.tsx.
+  async getSupplierAgingReport(): Promise<{
+    supplier_id: string;
+    name: string;
+    bucket_0_30: number;
+    bucket_31_60: number;
+    bucket_61_90: number;
+    bucket_90_plus: number;
+    total: number;
+  }[]> {
+    const suppliers = (await this.supplierRepository.findAll(undefined, { page: 1, limit: 100000 })).data;
+    const today = new Date();
+
+    const result = [];
+    for (const supplier of suppliers) {
+      const invoices = (await this.purchaseInvoiceRepository.findBySupplierId(supplier.id))
+        .filter((i) => i.status === 'unpaid' || i.status === 'partially_paid');
+
+      const b = { bucket_0_30: 0, bucket_31_60: 0, bucket_61_90: 0, bucket_90_plus: 0 };
+      for (const inv of invoices) {
+        const ageDays = Math.floor((today.getTime() - new Date(inv.date).getTime()) / 86_400_000);
+        const amount = Number(inv.total);
+        if (ageDays <= 30) b.bucket_0_30 += amount;
+        else if (ageDays <= 60) b.bucket_31_60 += amount;
+        else if (ageDays <= 90) b.bucket_61_90 += amount;
+        else b.bucket_90_plus += amount;
+      }
+      const total = b.bucket_0_30 + b.bucket_31_60 + b.bucket_61_90 + b.bucket_90_plus;
+      if (total > 0) result.push({ supplier_id: supplier.id, name: supplier.name, ...b, total });
+    }
+    return result;
+  }
+
   async getPaymentVouchers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<PaymentVoucher>> {
     return await this.paymentVoucherRepository.findAll(filter, params);
   }

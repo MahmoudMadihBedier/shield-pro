@@ -222,12 +222,21 @@ export const Accounting: React.FC = () => {
     }, 0);
   };
 
+  // Book value of inventory = the balance of the 'inventory' account
+  // (debited when goods are purchased). Falls back to valuing on-hand
+  // quantities at each item's cost_price (never a % of the retail price).
   const calculateInventoryValuation = () => {
+    const invAcc = accounts.find((a: any) => a.category === 'inventory');
+    if (invAcc) {
+      return transactions
+        .filter((tx: any) => tx.account_id === invAcc.id)
+        .reduce((s, tx) => s + Number(tx.debit) - Number(tx.credit), 0);
+    }
     return items.reduce((sum, item) => {
       const stock = stockMovements
         .filter((m: any) => m.item_id === item.id)
         .reduce((s, m) => s + Number(m.qty), 0);
-      const cost = Number(item.default_price) * 0.6; // estimate cost at 60% of retail
+      const cost = Number(item.cost_price) || 0;
       return sum + (stock * cost);
     }, 0);
   };

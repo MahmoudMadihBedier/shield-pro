@@ -99,9 +99,9 @@ export const Settings: React.FC = () => {
   };
 
   const loadGeneralSettings = async () => {
-    setCompanyName(await getSetting('company_name', 'مؤسسة لواصق الإطارات الفورية'));
-    setCompanyTaxNo(await getSetting('company_tax_no', '123-456-789'));
-    setCompanyAddress(await getSetting('company_address', 'القاهرة، جمهورية مصر العربية'));
+    setCompanyName(await getSetting('company_name', ''));
+    setCompanyTaxNo(await getSetting('company_tax_no', ''));
+    setCompanyAddress(await getSetting('company_address', ''));
     setVatEnabled((await getSetting('vat_enabled')) === 'true');
     setVatPct(await getSetting('default_vat_pct', '14'));
     setPrintSize(await getSetting('print_size', 'A4'));

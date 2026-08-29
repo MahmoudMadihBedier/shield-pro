@@ -105,6 +105,7 @@ export interface IPurchaseInvoiceRepository extends IRepository<PurchaseInvoice>
 
 export interface IPurchaseInvoiceLineRepository extends IRepository<PurchaseInvoiceLine> {
   findByInvoiceId(invoiceId: string): Promise<PurchaseInvoiceLine[]>;
+  findByItemId(itemId: string): Promise<PurchaseInvoiceLine[]>;
 }
 
 export interface IAccountRepository extends IRepository<Account> {

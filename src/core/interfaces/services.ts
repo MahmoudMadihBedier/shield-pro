@@ -64,6 +64,7 @@ export interface IPurchaseService {
   getInvoiceLines(invoiceId: string): Promise<PurchaseInvoiceLine[]>;
   getPaymentVouchers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<PaymentVoucher>>;
   createPaymentVoucher(voucher: Omit<PaymentVoucher, 'id' | 'created_at' | 'updated_at'>): Promise<PaymentVoucher>;
+  getSupplierAgingReport(): Promise<{ supplier_id: string; name: string; bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90_plus: number; total: number }[]>;
 }
 
 // Accounting Service

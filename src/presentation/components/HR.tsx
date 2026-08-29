@@ -102,7 +102,7 @@ export const HR: React.FC = () => {
   // 1. Employee State
   const [empName, setEmpName] = useState('');
   const [empRole, setEmpRole] = useState('عامل تشغيل خلط السائل');
-  const [empSalary, setEmpSalary] = useState('2500');
+  const [empSalary, setEmpSalary] = useState('');
   const [empAllowances, setEmpAllowances] = useState('0');
   const [empDeductions, setEmpDeductions] = useState('0');
   const [empUserId, setEmpUserId] = useState('');
@@ -118,7 +118,7 @@ export const HR: React.FC = () => {
   const [attCheckOut, setAttCheckOut] = useState('17:00');
 
   // 3. Payroll State
-  const [payrollMonth, setPayrollMonth] = useState('2026-07');
+  const [payrollMonth, setPayrollMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   // Default selection, once the employees list has loaded (mirrors the old
   // loadData() one-time defaulting, but reactive to the hook's own load
@@ -134,6 +134,7 @@ export const HR: React.FC = () => {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!empName.trim()) return;
+    if (!empSalary || Number(empSalary) <= 0) { alert('يرجى إدخال الراتب الأساسي.'); return; }
 
     try {
       await createEmployee({
@@ -147,7 +148,7 @@ export const HR: React.FC = () => {
       });
 
       setEmpName('');
-      setEmpSalary('2500');
+      setEmpSalary('');
       setEmpAllowances('0');
       setEmpDeductions('0');
       setEmpUserId('');
