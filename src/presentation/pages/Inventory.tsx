@@ -208,9 +208,9 @@ export const Inventory: React.FC = () => {
             >
               <option value="all">جميع الأنواع</option>
               <option value="raw_material">مواد خام</option>
+              <option value="intermediate">منتج وسيط (سائل صب)</option>
               <option value="finished_good">منتج تام</option>
               <option value="packaging">تغليف</option>
-              <option value="consumable">مستهلكات</option>
             </select>
             <button
               onClick={handleSearch}
@@ -297,9 +297,9 @@ export const Inventory: React.FC = () => {
                   className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="raw_material">مادة خام</option>
+                  <option value="intermediate">منتج وسيط (سائل صب)</option>
                   <option value="finished_good">منتج تام</option>
                   <option value="packaging">تغليف</option>
-                  <option value="consumable">مستهلكات</option>
                 </select>
               </div>
               <div>

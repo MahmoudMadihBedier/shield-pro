@@ -46,6 +46,9 @@ export const Settings: React.FC = () => {
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [newWhName, setNewWhName] = useState('');
   const [newWhLoc, setNewWhLoc] = useState('');
+  const [newWhType, setNewWhType] = useState<'main' | 'branch'>('branch');
+  const [newWhKind, setNewWhKind] = useState<'general' | 'raw_materials' | 'factory'>('general');
+  const [newWhParent, setNewWhParent] = useState('');
   const [multiWarehouseEnabled, setMultiWarehouseEnabled] = useState(false);
 
   // Sync state
@@ -260,10 +263,22 @@ export const Settings: React.FC = () => {
     if (!newWhName.trim()) return;
     try {
       const id = crypto.randomUUID();
-      const whObj = { id, name: newWhName.trim(), location: newWhLoc.trim(), is_active: true, created_at: new Date().toISOString() };
+      const whObj = {
+        id,
+        name: newWhName.trim(),
+        location: newWhLoc.trim(),
+        is_active: true,
+        type: newWhType,
+        kind: newWhKind,
+        parent_warehouse_id: newWhParent || null,
+        created_at: new Date().toISOString()
+      };
       await queueOfflineWrite('warehouses', 'insert', id, whObj);
       setNewWhName('');
       setNewWhLoc('');
+      setNewWhType('branch');
+      setNewWhKind('general');
+      setNewWhParent('');
       await loadWarehouses();
       showNotification('success', 'تمت إضافة المستودع بنجاح!');
     } catch (err: any) {
@@ -274,7 +289,7 @@ export const Settings: React.FC = () => {
   const toggleWarehouseActive = async (wh: any) => {
     try {
       const updated = { ...wh, is_active: !wh.is_active, updated_at: new Date().toISOString() };
-      await queueOfflineWrite('warehouses', 'insert', wh.id, updated);
+      await queueOfflineWrite('warehouses', 'update', wh.id, updated);
       await loadWarehouses();
       showNotification('success', 'تم تحديث حالة المستودع.');
     } catch (err: any) {
@@ -735,6 +750,42 @@ export const Settings: React.FC = () => {
                   className="w-full rounded-md border border-gray-300 py-1.5 px-3 text-sm bg-white"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">النوع (للصلاحيات)</label>
+                <select
+                  value={newWhType}
+                  onChange={(e) => setNewWhType(e.target.value as 'main' | 'branch')}
+                  className="w-full rounded-md border border-gray-300 py-1.5 px-3 text-sm bg-white"
+                >
+                  <option value="main">رئيسي (مخزن الشركة الأم — واحد فقط)</option>
+                  <option value="branch">فرع / مخزن تابع</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">الدور في دورة التصنيع</label>
+                <select
+                  value={newWhKind}
+                  onChange={(e) => setNewWhKind(e.target.value as 'general' | 'raw_materials' | 'factory')}
+                  className="w-full rounded-md border border-gray-300 py-1.5 px-3 text-sm bg-white"
+                >
+                  <option value="general">عام (بضاعة تامة / فروع بيع)</option>
+                  <option value="raw_materials">مخزن الخامات (تستلم فيه المشتريات)</option>
+                  <option value="factory">مخزن المصنع (تحت التشغيل — WIP)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-600 mb-1">المخزن الأب (اختياري)</label>
+                <select
+                  value={newWhParent}
+                  onChange={(e) => setNewWhParent(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 py-1.5 px-3 text-sm bg-white"
+                >
+                  <option value="">— بدون —</option>
+                  {warehouses.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="flex items-end">
                 <button
                   type="submit"
@@ -752,6 +803,8 @@ export const Settings: React.FC = () => {
                   <tr className="text-xs font-bold text-gray-500 uppercase">
                     <th className="py-3 px-4">اسم المستودع</th>
                     <th className="py-3 px-4">الموقع</th>
+                    <th className="py-3 px-4">النوع</th>
+                    <th className="py-3 px-4">الدور</th>
                     <th className="py-3 px-4">الحالة</th>
                     <th className="py-3 px-4 text-center">الإجراء</th>
                   </tr>
@@ -761,6 +814,10 @@ export const Settings: React.FC = () => {
                     <tr key={wh.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 font-semibold text-gray-800">{wh.name}</td>
                       <td className="py-3 px-4 text-gray-600">{wh.location || '-'}</td>
+                      <td className="py-3 px-4 text-gray-600">{wh.type === 'main' ? 'رئيسي' : 'فرع'}</td>
+                      <td className="py-3 px-4 text-gray-600">
+                        {wh.kind === 'raw_materials' ? 'مخزن خامات' : wh.kind === 'factory' ? 'مخزن مصنع (WIP)' : 'عام'}
+                      </td>
                       <td className="py-3 px-4">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                           wh.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'

@@ -91,6 +91,13 @@ export interface Warehouse extends BaseEntity {
   // not the parent link).
   type: 'main' | 'branch';
   parent_warehouse_id?: string | null;
+  // Functional role in the manufacturing cycle, orthogonal to `type`:
+  //   'raw_materials' — purchasing receives bought raw materials here
+  //   'factory'       — WIP: raw materials transferred in on production
+  //                     approval, consumed and finished output held until a
+  //                     distribution order moves it to the main warehouse
+  //   'general'       — everything else (main finished-goods store, branches)
+  kind: 'raw_materials' | 'factory' | 'general';
 }
 
 export interface StockMovement extends BaseEntity {
@@ -167,6 +174,10 @@ export interface SalesInvoice extends BaseEntity {
   // geolocation) — nullable, since not every sale is field/rep-driven.
   lat?: number | null;
   lng?: number | null;
+  // Set when the sale is billed against a rep's van stock-in-hand rather
+  // than a warehouse counter sale — the line stock then comes off
+  // rep_stock_ledger, not stock_movements. Nullable (counter sales).
+  rep_user_id?: string | null;
 }
 
 export interface SalesInvoiceLine extends BaseEntity {
@@ -212,6 +223,9 @@ export interface PurchaseInvoice extends BaseEntity {
   discount: number;
   tax: number;
   total: number;
+  // Warehouse the purchased goods are received into (defaults to the
+  // raw-materials store). Nullable for legacy rows created before the column.
+  warehouse_id?: string | null;
 }
 
 export interface PurchaseInvoiceLine extends BaseEntity {
@@ -316,6 +330,11 @@ export interface ProductionBatch extends BaseEntity {
   // (created_by uuid default auth.uid()) but not part of the shared
   // BaseEntity type; declared here since this is the first place it's read.
   created_by?: string | null;
+  // The factory (kind='factory') warehouse this batch is produced in: raw
+  // materials are consumed here and finished output is held here until a
+  // distribution order moves it to the main warehouse. Nullable for legacy
+  // rows / ad-hoc batches created before the cycle.
+  warehouse_id?: string | null;
 }
 
 // Phase 2.8 — formal return/write-off instead of goods silently
@@ -370,6 +389,9 @@ export interface ProductionRequest extends BaseEntity {
   requested_qty: number;
   requested_by: string;
   raw_material_warehouse_id: string;
+  // Where the approved raw materials are transferred to (kind='factory').
+  // Resolved to the single factory warehouse when left null.
+  factory_warehouse_id?: string | null;
   status: 'pending_materials' | 'materials_approved' | 'rejected' | 'in_production' | 'completed';
   material_approved_by?: string | null;
   material_approved_at?: string | null;

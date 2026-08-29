@@ -61,6 +61,9 @@ export interface IUnitConversionRepository extends IRepository<UnitConversion> {
 export interface IWarehouseRepository extends IRepository<Warehouse> {
   findActive(): Promise<Warehouse[]>;
   findMain(): Promise<Warehouse | undefined>;
+  findByKind(kind: Warehouse['kind']): Promise<Warehouse[]>;
+  findRawMaterials(): Promise<Warehouse | undefined>;
+  findFactory(): Promise<Warehouse | undefined>;
 }
 
 export interface IStockMovementRepository extends IRepository<StockMovement> {
