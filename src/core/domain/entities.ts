@@ -689,6 +689,29 @@ export interface RepCloseoutSession extends BaseEntity {
   confirmed_by?: string | null;
 }
 
+// The rep asks a branch warehouse for stock; the branch keeper approves;
+// on approval the stock moves into the rep's van custody (rep_issue stock
+// movement + rep_stock_ledger 'issued'). Segregation of duties
+// (approver != rep, approver != requester) is enforced server-side by
+// enforce_rep_stock_request_segregation_of_duties.
+export interface RepStockRequest extends BaseEntity {
+  rep_user_id: string;
+  warehouse_id: string;
+  requested_by: string;
+  status: 'pending_approval' | 'approved' | 'rejected' | 'issued';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+}
+
+export interface RepStockRequestLine extends BaseEntity {
+  request_id: string;
+  item_id: string;
+  requested_qty: number;
+}
+
 export interface ClientFinancialSummary extends BaseEntity {
   customer_id: string;
   client_id?: string;

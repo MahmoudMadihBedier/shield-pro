@@ -6,7 +6,7 @@ import { useAuth } from '../../application/services/auth-service';
 import { useToast } from './ui/Toast';
 import { getErrorMessage } from '../../shared/utils/errors';
 import { formatCurrency } from '../../shared/utils/format';
-import { Package, Wallet, ClipboardCheck } from 'lucide-react';
+import { Package, Wallet, ClipboardCheck, Send } from 'lucide-react';
 
 // Phase 2.4 of SHIELD_PRO_REFACTOR_MASTER_PLAN.md: every sales rep is a mini
 // warehouse (stock-in-hand) and mini cash register (cash-in-hand). This
@@ -28,7 +28,14 @@ export const RepLedger: React.FC = () => {
   const [myCash, setMyCash] = useState(0);
   const [pendingSessions, setPendingSessions] = useState<any[]>([]);
 
-  // Issuance form
+  // Rep stock requests (rep -> branch keeper)
+  const [stockRequests, setStockRequests] = useState<any[]>([]);
+  const [requestLinesByReq, setRequestLinesByReq] = useState<{ [id: string]: any[] }>({});
+  const [reqWarehouseId, setReqWarehouseId] = useState('');
+  const [reqLines, setReqLines] = useState<{ item_id: string; qty: number }[]>([{ item_id: '', qty: 1 }]);
+  const [rejectReasonById, setRejectReasonById] = useState<{ [id: string]: string }>({});
+
+  // Direct issuance form (admin-only fallback)
   const [issueRepId, setIssueRepId] = useState('');
   const [issueWarehouseId, setIssueWarehouseId] = useState('');
   const [issueLines, setIssueLines] = useState<{ item_id: string; qty: number }[]>([{ item_id: '', qty: 1 }]);
@@ -37,8 +44,9 @@ export const RepLedger: React.FC = () => {
   const [actualCash, setActualCash] = useState('0');
   const [stockCounts, setStockCounts] = useState<{ [itemId: string]: string }>({});
 
-  const canIssue = checkPermission('inventory', 'add');
+  const canIssue = checkPermission('inventory', 'add') || checkPermission('inventory', 'edit');
   const canConfirm = checkPermission('accounting', 'edit') || checkPermission('inventory', 'edit');
+  const isAdmin = profile?.role_name === 'Master Admin' || checkPermission('settings', 'edit');
 
   const loadStatic = useCallback(async () => {
     const [listUsers, listWarehouses, listItems] = await Promise.all([
@@ -67,9 +75,22 @@ export const RepLedger: React.FC = () => {
     setPendingSessions(all.filter((s: any) => (s.status === 'submitted' || s.status === 'variance_flagged') && s.rep_user_id !== profile?.id));
   }, [canConfirm, profile?.id]);
 
+  const loadRequests = useCallback(async () => {
+    const [reqs, lines] = await Promise.all([
+      db.rep_stock_requests.toArray(),
+      db.rep_stock_request_lines.toArray()
+    ]);
+    reqs.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const grouped: { [id: string]: any[] } = {};
+    for (const l of lines) (grouped[l.request_id] = grouped[l.request_id] || []).push(l);
+    setStockRequests(reqs);
+    setRequestLinesByReq(grouped);
+  }, []);
+
   useEffect(() => { loadStatic(); }, [loadStatic]);
   useEffect(() => { loadMine(); }, [loadMine]);
   useEffect(() => { loadPending(); }, [loadPending]);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
 
   const itemName = (id: string) => items.find((i) => i.id === id)?.name || id;
 
@@ -126,6 +147,63 @@ export const RepLedger: React.FC = () => {
     }
   };
 
+  // --- Rep stock request handlers ---
+  const handleAddReqLine = () => setReqLines([...reqLines, { item_id: '', qty: 1 }]);
+  const handleReqLineChange = (idx: number, field: 'item_id' | 'qty', value: string) => {
+    const updated = [...reqLines];
+    updated[idx] = { ...updated[idx], [field]: field === 'qty' ? Number(value) : value };
+    setReqLines(updated);
+  };
+
+  const handleCreateRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile?.id || !reqWarehouseId || reqLines.some((l) => !l.item_id || l.qty <= 0)) {
+      error('اختر الفرع وأضف الأصناف والكميات');
+      return;
+    }
+    setLoading(true);
+    try {
+      await repLedgerService.createRepStockRequest(profile.id, reqWarehouseId, profile.id, reqLines);
+      success('تم إرسال طلب صرف العهدة — بانتظار اعتماد أمين المخزن');
+      setReqLines([{ item_id: '', qty: 1 }]);
+      await loadRequests();
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل إرسال الطلب'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApproveRequest = async (id: string) => {
+    if (!profile?.id) return;
+    setLoading(true);
+    try {
+      await repLedgerService.approveRepStockRequest(id, profile.id);
+      success('تم اعتماد الطلب ونقل البضاعة لعهدة المندوب');
+      await Promise.all([loadRequests(), loadMine()]);
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل اعتماد الطلب'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRejectRequest = async (id: string) => {
+    if (!profile?.id) return;
+    const reason = rejectReasonById[id];
+    if (!reason?.trim()) { error('أدخل سبب الرفض'); return; }
+    setLoading(true);
+    try {
+      await repLedgerService.rejectRepStockRequest(id, profile.id, reason.trim());
+      success('تم رفض الطلب');
+      await loadRequests();
+    } catch (e) {
+      error(getErrorMessage(e, 'فشل رفض الطلب'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleConfirm = async (session: any) => {
     if (!profile?.id) return;
     setLoading(true);
@@ -152,11 +230,89 @@ export const RepLedger: React.FC = () => {
         </p>
       </div>
 
-      {canIssue && (
+      {/* Rep raises a request; branch keeper approves — the two-party van load */}
+      <div className="bg-white p-5 rounded-lg border shadow">
+        <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+          <Send className="h-5 w-5 text-blue-600" />
+          طلبات صرف العهدة (طلب المندوب ← اعتماد أمين المخزن)
+        </h3>
+
+        <form onSubmit={handleCreateRequest} className="space-y-3 mb-6">
+          <div className="text-xs text-gray-500">
+            بصفتك مندوباً: اطلب البضاعة من فرعك. لا تنتقل البضاعة لعهدتك إلا بعد اعتماد أمين المخزن (شخص مختلف عنك).
+          </div>
+          <select value={reqWarehouseId} onChange={(e) => setReqWarehouseId(e.target.value)} className="border rounded p-2 text-sm w-full">
+            <option value="">-- اختر الفرع (المخزن) --</option>
+            {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+          </select>
+          {reqLines.map((line, idx) => (
+            <div key={idx} className="grid grid-cols-3 gap-3">
+              <select value={line.item_id} onChange={(e) => handleReqLineChange(idx, 'item_id', e.target.value)} className="border rounded p-2 text-sm col-span-2">
+                <option value="">-- الصنف --</option>
+                {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              </select>
+              <input type="number" min={1} value={line.qty} onChange={(e) => handleReqLineChange(idx, 'qty', e.target.value)} className="border rounded p-2 text-sm" />
+            </div>
+          ))}
+          <div className="flex justify-between">
+            <button type="button" onClick={handleAddReqLine} className="text-xs text-blue-600 hover:underline">+ إضافة صنف</button>
+            <button type="submit" disabled={loading} className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">
+              إرسال الطلب
+            </button>
+          </div>
+        </form>
+
+        {stockRequests.length === 0 ? (
+          <p className="text-gray-400 text-sm">لا توجد طلبات صرف عهدة.</p>
+        ) : (
+          <div className="space-y-2">
+            {stockRequests.map((r) => {
+              const lines = requestLinesByReq[r.id] || [];
+              const st = {
+                pending_approval: { t: 'بانتظار الاعتماد', c: 'bg-yellow-100 text-yellow-800' },
+                approved: { t: 'معتمد', c: 'bg-blue-100 text-blue-800' },
+                issued: { t: 'تم النقل للعهدة', c: 'bg-green-100 text-green-800' },
+                rejected: { t: 'مرفوض', c: 'bg-red-100 text-red-800' }
+              }[r.status as string] || { t: r.status, c: 'bg-gray-100 text-gray-700' };
+              const canAct = canIssue && r.status === 'pending_approval' && r.rep_user_id !== profile?.id && r.requested_by !== profile?.id;
+              return (
+                <div key={r.id} className="border rounded p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <span className="font-bold text-gray-800">{users.find((u) => u.id === r.rep_user_id)?.name || r.rep_user_id}</span>
+                      <span className="text-xs text-gray-500"> · {warehouses.find((w) => w.id === r.warehouse_id)?.name || '-'} · {new Date(r.created_at).toLocaleString('ar-EG')}</span>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full ${st.c}`}>{st.t}</span>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">
+                    {lines.map((l) => `${itemName(l.item_id)}: ${l.requested_qty}`).join(' · ')}
+                  </div>
+                  {r.rejection_reason && <div className="text-xs text-red-600 mt-1">سبب الرفض: {r.rejection_reason}</div>}
+                  {canAct && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        type="text"
+                        placeholder="سبب الرفض"
+                        value={rejectReasonById[r.id] || ''}
+                        onChange={(e) => setRejectReasonById({ ...rejectReasonById, [r.id]: e.target.value })}
+                        className="border rounded p-1 text-xs w-32"
+                      />
+                      <button onClick={() => handleRejectRequest(r.id)} disabled={loading} className="text-xs bg-red-100 text-red-800 px-3 py-1 rounded hover:bg-red-200">رفض</button>
+                      <button onClick={() => handleApproveRequest(r.id)} disabled={loading} className="text-xs bg-green-100 text-green-800 px-3 py-1 rounded hover:bg-green-200">اعتماد ونقل للعهدة</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {isAdmin && (
         <div className="bg-white p-5 rounded-lg border shadow">
           <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
             <Package className="h-5 w-5 text-blue-600" />
-            صرف بضاعة لعهدة مندوب
+            صرف مباشر لعهدة مندوب (إداري — بدون طلب)
           </h3>
           <form onSubmit={handleIssueStock} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
