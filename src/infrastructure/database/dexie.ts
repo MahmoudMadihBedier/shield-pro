@@ -65,6 +65,9 @@ class ERPDatabase extends Dexie {
   stock_count_sessions!: Table<any, string>;
   stock_count_lines!: Table<any, string>;
   internal_notifications!: Table<any, string>;
+  rep_stock_requests!: Table<any, string>;
+  rep_stock_request_lines!: Table<any, string>;
+  branch_cash_settlements!: Table<any, string>;
 
   constructor() {
     super('ERPDatabase');
@@ -169,6 +172,17 @@ class ERPDatabase extends Dexie {
     // v12: Internal staff notifications
     this.version(12).stores({
       internal_notifications: 'id, user_id, role_id, is_read'
+    });
+
+    // v13: Rep stock requests (rep -> branch keeper dual sign-off before van load)
+    this.version(13).stores({
+      rep_stock_requests: 'id, rep_user_id, warehouse_id, status',
+      rep_stock_request_lines: 'id, request_id, item_id'
+    });
+
+    // v14: Weekly branch-cashier -> main-treasury cash settlements
+    this.version(14).stores({
+      branch_cash_settlements: 'id, branch_warehouse_id, status, period_end'
     });
   }
 }

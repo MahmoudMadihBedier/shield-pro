@@ -34,15 +34,19 @@ export const DistributionOrders: React.FC = () => {
   const canShip = checkPermission('inventory', 'edit');
   const canReceive = checkPermission('inventory', 'edit');
 
+  const [movements, setMovements] = useState<any[]>([]);
+
   const loadData = useCallback(async () => {
-    const [listItems, listWarehouses, listOrders, listLines] = await Promise.all([
+    const [listItems, listWarehouses, listOrders, listLines, listMovements] = await Promise.all([
       db.items.toArray(),
       RepositoryFactory.getWarehouseRepository().findActive(),
       db.distribution_orders.toArray(),
-      db.distribution_order_lines.toArray()
+      db.distribution_order_lines.toArray(),
+      db.stock_movements.toArray()
     ]);
     setItems(listItems);
     setWarehouses(listWarehouses);
+    setMovements(listMovements);
     setOrders(listOrders.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
     const grouped: { [orderId: string]: any[] } = {};
     for (const l of listLines) {
@@ -59,6 +63,21 @@ export const DistributionOrders: React.FC = () => {
 
   const itemName = (id: string) => items.find((i) => i.id === id)?.name || id;
   const whName = (id: string) => warehouses.find((w) => w.id === id)?.name || id;
+  const whKindLabel = (w: any) => (w?.kind === 'raw_materials' ? ' — خامات' : w?.kind === 'factory' ? ' — المصنع' : w?.type === 'main' ? ' (الرئيسي)' : '');
+  const onHandAt = (itemId: string, whId: string) =>
+    movements.filter((m) => m.item_id === itemId && m.warehouse_id === whId).reduce((s, m) => s + Number(m.qty), 0);
+
+  const applyPreset = (kind: 'from_factory' | 'to_branch') => {
+    const factory = warehouses.find((w) => w.kind === 'factory');
+    const main = warehouses.find((w) => w.type === 'main');
+    if (kind === 'from_factory') {
+      if (factory) setFromWh(factory.id);
+      if (main) setToWh(main.id);
+    } else {
+      if (main) setFromWh(main.id);
+      setToWh('');
+    }
+  };
 
   const handleAddLine = () => setOrderLines([...orderLines, { item_id: '', qty: 1 }]);
   const handleLineChange = (idx: number, field: 'item_id' | 'qty', value: string) => {
@@ -166,25 +185,41 @@ export const DistributionOrders: React.FC = () => {
       <div className="bg-white p-5 rounded-lg border shadow">
         <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">طلب توزيع جديد</h3>
         <form onSubmit={handleCreateOrder} className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => applyPreset('from_factory')} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded hover:bg-indigo-100">
+              استلام إنتاج تام من المصنع → الرئيسي
+            </button>
+            <button type="button" onClick={() => applyPreset('to_branch')} className="text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded hover:bg-emerald-100">
+              توزيع من الرئيسي → فرع
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <select value={fromWh} onChange={(e) => setFromWh(e.target.value)} className="border rounded p-2 text-sm">
               <option value="">-- من مخزن --</option>
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{w.type === 'main' ? ' (الرئيسي)' : ''}</option>)}
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{whKindLabel(w)}</option>)}
             </select>
             <select value={toWh} onChange={(e) => setToWh(e.target.value)} className="border rounded p-2 text-sm">
-              <option value="">-- إلى فرع --</option>
-              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              <option value="">-- إلى مخزن --</option>
+              {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}{whKindLabel(w)}</option>)}
             </select>
           </div>
-          {orderLines.map((line, idx) => (
+          {orderLines.map((line, idx) => {
+            const avail = line.item_id && fromWh ? onHandAt(line.item_id, fromWh) : null;
+            const over = avail != null && Number(line.qty) > avail;
+            return (
             <div key={idx} className="grid grid-cols-3 gap-3">
               <select value={line.item_id} onChange={(e) => handleLineChange(idx, 'item_id', e.target.value)} className="border rounded p-2 text-sm col-span-2">
                 <option value="">-- الصنف --</option>
                 {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
               </select>
-              <input type="number" min={1} value={line.qty} onChange={(e) => handleLineChange(idx, 'qty', e.target.value)} className="border rounded p-2 text-sm" />
+              <div>
+                <input type="number" min={1} value={line.qty} onChange={(e) => handleLineChange(idx, 'qty', e.target.value)} className={`border rounded p-2 text-sm w-full ${over ? 'border-red-400' : ''}`} />
+                {avail != null && (
+                  <div className={`text-[10px] mt-0.5 ${over ? 'text-red-600' : 'text-gray-400'}`}>متاح بالمصدر: {avail.toFixed(2)}</div>
+                )}
+              </div>
             </div>
-          ))}
+          );})}
           <div className="flex justify-between">
             <button type="button" onClick={handleAddLine} className="text-xs text-blue-600 hover:underline">+ إضافة صنف</button>
             <button type="submit" disabled={loading} className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50">

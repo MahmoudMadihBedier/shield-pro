@@ -1,14 +1,16 @@
 import { IAccountingService } from '../../core/interfaces/services';
-import { Account, AccountTransaction, CashVoucher } from '../../core/domain/entities';
+import { Account, AccountTransaction, CashVoucher, BranchCashSettlement } from '../../core/domain/entities';
 import { PaginationParams, PaginatedResult, EntityFilter, ProfitLoss } from '../../core/types';
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { postDoubleEntry } from './accounting-helpers';
+import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 
 export class AccountingService implements IAccountingService {
   private accountRepository = RepositoryFactory.getAccountRepository();
   private accountTransactionRepository = RepositoryFactory.getAccountTransactionRepository();
   private cashVoucherRepository = RepositoryFactory.getCashVoucherRepository();
+  private branchCashSettlementRepository = RepositoryFactory.getBranchCashSettlementRepository();
 
   async getAccounts(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<Account>> {
     return await this.accountRepository.findAll(filter, params);
@@ -177,5 +179,90 @@ export class AccountingService implements IAccountingService {
     });
 
     return newVoucher;
+  }
+
+  // ---- Weekly branch-cashier -> main-treasury settlement ----------------
+
+  private async cashAccountId(): Promise<string> {
+    const acc = (await this.accountRepository.findByCategory('cash'))[0]?.id;
+    if (!acc) throw new Error('حساب النقدية (الصندوق) غير موجود في دليل الحسابات.');
+    return acc;
+  }
+
+  // Cash sitting at a branch and not yet swept to the treasury: the net of
+  // the 'cash' account's transactions tagged to this branch, minus the sum
+  // of already-confirmed settlements for the branch.
+  async getBranchUndepositedCash(branchWarehouseId: string): Promise<number> {
+    const cashAcc = await this.cashAccountId();
+    const txs = await this.accountTransactionRepository.findByAccountId(cashAcc);
+    const branchCash = txs
+      .filter((tx) => (tx.warehouse_id || null) === branchWarehouseId)
+      .reduce((sum, tx) => sum + Number(tx.debit) - Number(tx.credit), 0);
+
+    const settled = (await this.branchCashSettlementRepository.findByBranch(branchWarehouseId))
+      .filter((s) => s.status === 'confirmed')
+      .reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+    return branchCash - settled;
+  }
+
+  async getBranchCashSettlements(branchWarehouseId: string | null): Promise<BranchCashSettlement[]> {
+    return branchWarehouseId === null
+      ? (await this.branchCashSettlementRepository.findAll(undefined, { page: 1, limit: 100000 })).data
+      : await this.branchCashSettlementRepository.findByBranch(branchWarehouseId);
+  }
+
+  async createBranchCashSettlement(
+    branchWarehouseId: string,
+    periodStart: string,
+    periodEnd: string,
+    depositedBy: string,
+    notes?: string
+  ): Promise<BranchCashSettlement> {
+    const total = await this.getBranchUndepositedCash(branchWarehouseId);
+    if (total <= 0) throw new Error('لا توجد نقدية بالفرع غير مورّدة للخزينة في هذه الفترة.');
+
+    const settlement = await this.branchCashSettlementRepository.create({
+      branch_warehouse_id: branchWarehouseId,
+      period_start: periodStart,
+      period_end: periodEnd,
+      total_amount: total,
+      status: 'submitted',
+      deposited_by: depositedBy,
+      submitted_at: new Date().toISOString(),
+      notes: notes || null
+    } as Omit<BranchCashSettlement, 'id' | 'created_at' | 'updated_at'>);
+    await queueOfflineWrite('branch_cash_settlements', 'insert', settlement.id, settlement);
+    return settlement;
+  }
+
+  // The head/branch accountant (a different person from the depositor)
+  // confirms receipt into the treasury and the journal is posted:
+  // Dr cash(main treasury, warehouse_id null) / Cr cash(branch).
+  async confirmBranchCashSettlement(id: string, confirmedBy: string): Promise<BranchCashSettlement> {
+    const s = await this.branchCashSettlementRepository.findById(id);
+    if (!s) throw new Error('تسوية الخزينة غير موجودة');
+    if (s.status === 'confirmed') throw new Error('تم اعتماد هذه التسوية بالفعل.');
+    assertSegregationOfDuties({ requestedBy: s.deposited_by || '', actingUserId: confirmedBy, action: 'اعتماد توريد نقدية الفرع للخزينة' });
+
+    const confirmed = await this.branchCashSettlementRepository.update(id, {
+      status: 'confirmed',
+      confirmed_by: confirmedBy,
+      confirmed_at: new Date().toISOString()
+    });
+    await queueOfflineWrite('branch_cash_settlements', 'update', id, confirmed);
+
+    const cashAcc = await this.cashAccountId();
+    await postDoubleEntry({
+      refTable: 'branch_cash_settlements',
+      refId: id,
+      debitAccountId: cashAcc,
+      creditAccountId: cashAcc,
+      amount: Number(s.total_amount),
+      debitWarehouseId: null,                 // main treasury
+      creditWarehouseId: s.branch_warehouse_id // out of the branch cash
+    });
+
+    return confirmed;
   }
 }

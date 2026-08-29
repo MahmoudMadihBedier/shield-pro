@@ -91,6 +91,13 @@ export interface Warehouse extends BaseEntity {
   // not the parent link).
   type: 'main' | 'branch';
   parent_warehouse_id?: string | null;
+  // Functional role in the manufacturing cycle, orthogonal to `type`:
+  //   'raw_materials' — purchasing receives bought raw materials here
+  //   'factory'       — WIP: raw materials transferred in on production
+  //                     approval, consumed and finished output held until a
+  //                     distribution order moves it to the main warehouse
+  //   'general'       — everything else (main finished-goods store, branches)
+  kind: 'raw_materials' | 'factory' | 'general';
 }
 
 export interface StockMovement extends BaseEntity {
@@ -167,6 +174,10 @@ export interface SalesInvoice extends BaseEntity {
   // geolocation) — nullable, since not every sale is field/rep-driven.
   lat?: number | null;
   lng?: number | null;
+  // Set when the sale is billed against a rep's van stock-in-hand rather
+  // than a warehouse counter sale — the line stock then comes off
+  // rep_stock_ledger, not stock_movements. Nullable (counter sales).
+  rep_user_id?: string | null;
 }
 
 export interface SalesInvoiceLine extends BaseEntity {
@@ -212,6 +223,9 @@ export interface PurchaseInvoice extends BaseEntity {
   discount: number;
   tax: number;
   total: number;
+  // Warehouse the purchased goods are received into (defaults to the
+  // raw-materials store). Nullable for legacy rows created before the column.
+  warehouse_id?: string | null;
 }
 
 export interface PurchaseInvoiceLine extends BaseEntity {
@@ -316,6 +330,11 @@ export interface ProductionBatch extends BaseEntity {
   // (created_by uuid default auth.uid()) but not part of the shared
   // BaseEntity type; declared here since this is the first place it's read.
   created_by?: string | null;
+  // The factory (kind='factory') warehouse this batch is produced in: raw
+  // materials are consumed here and finished output is held here until a
+  // distribution order moves it to the main warehouse. Nullable for legacy
+  // rows / ad-hoc batches created before the cycle.
+  warehouse_id?: string | null;
 }
 
 // Phase 2.8 — formal return/write-off instead of goods silently
@@ -370,6 +389,9 @@ export interface ProductionRequest extends BaseEntity {
   requested_qty: number;
   requested_by: string;
   raw_material_warehouse_id: string;
+  // Where the approved raw materials are transferred to (kind='factory').
+  // Resolved to the single factory warehouse when left null.
+  factory_warehouse_id?: string | null;
   status: 'pending_materials' | 'materials_approved' | 'rejected' | 'in_production' | 'completed';
   material_approved_by?: string | null;
   material_approved_at?: string | null;
@@ -665,6 +687,48 @@ export interface RepCloseoutSession extends BaseEntity {
   // enforced server-side by enforce_closeout_segregation_of_duties trigger.
   confirmed_at?: string | null;
   confirmed_by?: string | null;
+}
+
+// The rep asks a branch warehouse for stock; the branch keeper approves;
+// on approval the stock moves into the rep's van custody (rep_issue stock
+// movement + rep_stock_ledger 'issued'). Segregation of duties
+// (approver != rep, approver != requester) is enforced server-side by
+// enforce_rep_stock_request_segregation_of_duties.
+export interface RepStockRequest extends BaseEntity {
+  rep_user_id: string;
+  warehouse_id: string;
+  requested_by: string;
+  status: 'pending_approval' | 'approved' | 'rejected' | 'issued';
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+}
+
+export interface RepStockRequestLine extends BaseEntity {
+  request_id: string;
+  item_id: string;
+  requested_qty: number;
+}
+
+// Weekly (or any period) sweep of cash collected at a branch into the main
+// treasury. Branch vs treasury cash is the single 'cash' account, told
+// apart by account_transactions.warehouse_id (branch id vs null). Confirmed
+// by a different person (head/branch accountant) — enforced server-side by
+// enforce_branch_cash_settlement_segregation_of_duties.
+export interface BranchCashSettlement extends BaseEntity {
+  branch_warehouse_id: string;
+  period_start: string;
+  period_end: string;
+  total_amount: number;
+  status: 'draft' | 'submitted' | 'confirmed';
+  deposited_by?: string | null;
+  submitted_at?: string | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
 }
 
 export interface ClientFinancialSummary extends BaseEntity {

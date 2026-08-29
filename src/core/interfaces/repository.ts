@@ -12,7 +12,8 @@ import {
   Employee, Attendance, PayrollRun,
   Setting, AuditLog, UserLocation,
   Task, EmployeeReport, Bonus, Punishment,
-  RepStockLedger, RepCashLedger, RepCloseoutSession, ProductionRequest,
+  RepStockLedger, RepCashLedger, RepCloseoutSession, RepStockRequest, RepStockRequestLine,
+  BranchCashSettlement, ProductionRequest,
   DistributionOrder, DistributionOrderLine, CashVoucher,
   ApprovalRule, ApprovalRuleLog, FraudFlag,
   ReturnWriteoffRequest, StockCountSession, StockCountLine, InternalNotification
@@ -61,6 +62,9 @@ export interface IUnitConversionRepository extends IRepository<UnitConversion> {
 export interface IWarehouseRepository extends IRepository<Warehouse> {
   findActive(): Promise<Warehouse[]>;
   findMain(): Promise<Warehouse | undefined>;
+  findByKind(kind: Warehouse['kind']): Promise<Warehouse[]>;
+  findRawMaterials(): Promise<Warehouse | undefined>;
+  findFactory(): Promise<Warehouse | undefined>;
 }
 
 export interface IStockMovementRepository extends IRepository<StockMovement> {
@@ -101,6 +105,7 @@ export interface IPurchaseInvoiceRepository extends IRepository<PurchaseInvoice>
 
 export interface IPurchaseInvoiceLineRepository extends IRepository<PurchaseInvoiceLine> {
   findByInvoiceId(invoiceId: string): Promise<PurchaseInvoiceLine[]>;
+  findByItemId(itemId: string): Promise<PurchaseInvoiceLine[]>;
 }
 
 export interface IAccountRepository extends IRepository<Account> {
@@ -211,6 +216,20 @@ export interface IDistributionOrderRepository extends IRepository<DistributionOr
 
 export interface IDistributionOrderLineRepository extends IRepository<DistributionOrderLine> {
   findByOrderId(orderId: string): Promise<DistributionOrderLine[]>;
+}
+
+export interface IRepStockRequestRepository extends IRepository<RepStockRequest> {
+  findByStatus(status: string): Promise<RepStockRequest[]>;
+  findByRepId(repUserId: string): Promise<RepStockRequest[]>;
+}
+
+export interface IRepStockRequestLineRepository extends IRepository<RepStockRequestLine> {
+  findByRequestId(requestId: string): Promise<RepStockRequestLine[]>;
+}
+
+export interface IBranchCashSettlementRepository extends IRepository<BranchCashSettlement> {
+  findByBranch(branchWarehouseId: string): Promise<BranchCashSettlement[]>;
+  findByStatus(status: string): Promise<BranchCashSettlement[]>;
 }
 
 export interface ICashVoucherRepository extends IRepository<CashVoucher> {

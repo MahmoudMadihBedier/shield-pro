@@ -10,4 +10,8 @@ export class PurchaseInvoiceLineRepository extends BaseRepository<PurchaseInvoic
   async findByInvoiceId(invoiceId: string): Promise<PurchaseInvoiceLine[]> {
     return await this.table.filter((line: PurchaseInvoiceLine) => line.invoice_id === invoiceId).toArray();
   }
+
+  async findByItemId(itemId: string): Promise<PurchaseInvoiceLine[]> {
+    return await this.table.filter((line: PurchaseInvoiceLine) => line.item_id === itemId).toArray();
+  }
 }

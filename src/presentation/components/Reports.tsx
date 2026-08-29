@@ -23,11 +23,12 @@ export const Reports: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [stockMovements, setStockMovements] = useState<any[]>([]);
   const [productionBatches, setProductionBatches] = useState<any[]>([]);
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [purchaseInvoices, setPurchaseInvoices] = useState<any[]>([]);
-  const [paymentVouchers, setPaymentVouchers] = useState<any[]>([]);
-  const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0.5);
+  const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0);
   const [customerAging, setCustomerAging] = useState<{ customer_id: string; name: string; bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90_plus: number; total: number }[]>([]);
+  const [supplierAging, setSupplierAging] = useState<{ supplier_id: string; name: string; bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90_plus: number; total: number }[]>([]);
+  // Real per-item unit cost (weighted-avg purchase price, then cost_price,
+  // then null = "unknown"). Replaces the fabricated 40%/60%-of-retail guesses.
+  const [costBasisByItem, setCostBasisByItem] = useState<Record<string, number | null>>({});
 
   // Date Filters
   const [startDate, setStartDate] = useState('');
@@ -43,25 +44,29 @@ export const Reports: React.FC = () => {
     const listItems = await db.items.toArray();
     const listMovs = await db.stock_movements.toArray();
     const listBatches = await db.production_batches.toArray();
-    const listSupps = await db.suppliers.toArray();
-    const listPurInvs = await db.purchase_invoices.toArray();
-    const listPayVouch = await db.payment_vouchers.toArray();
-    const overheadPerUnit = Number(await getSetting('labor_overhead_per_unit', '0.5'));
+    const overheadPerUnit = Number(await getSetting('labor_overhead_per_unit', '0')) || 0;
 
     setAccounts(listAccs);
     setTransactions(listTxs);
     setItems(listItems);
     setStockMovements(listMovs);
     setProductionBatches(listBatches);
-    setSuppliers(listSupps);
-    setPurchaseInvoices(listPurInvs);
-    setPaymentVouchers(listPayVouch);
     setLaborOverheadPerUnit(overheadPerUnit);
 
-    // Real date-based aging (was previously a fixed 60/30/10% estimate,
-    // not actually based on invoice age at all).
-    const aging = await ServiceFactory.getSalesService().getCustomerAgingReport();
-    setCustomerAging(aging);
+    // Real date-based aging (was previously a fixed %-split estimate, not
+    // actually based on invoice age at all) — for both AR and AP.
+    const [arAging, apAging] = await Promise.all([
+      ServiceFactory.getSalesService().getCustomerAgingReport(),
+      ServiceFactory.getPurchaseService().getSupplierAgingReport()
+    ]);
+    setCustomerAging(arAging);
+    setSupplierAging(apAging);
+
+    // Real unit cost per item (weighted-avg purchase price / cost_price / null).
+    const analytics = ServiceFactory.getAnalyticsService();
+    const basis: Record<string, number | null> = {};
+    for (const it of listItems) basis[it.id] = await analytics.getItemCostBasis(it.id);
+    setCostBasisByItem(basis);
   };
 
   const handleExportAging = () => {
@@ -105,8 +110,18 @@ export const Reports: React.FC = () => {
       .reduce((sum, tx) => sum + Number(tx.credit) - Number(tx.debit), 0);
   };
 
+  // Cost of goods sold, estimated from the quantities that left as sales
+  // (sale_out / rep-issue is not a sale) valued at each item's real unit
+  // cost. Replaces reading a 'cogs' account that is no longer posted to at
+  // purchase time (purchases now debit 'inventory').
   const getPnlCOGS = () => {
-    return calculateCategoryBalance('cogs');
+    return stockMovements
+      .filter((m) => m.movement_type === 'sale_out')
+      .filter((m) => {
+        const d = (m.moved_at || '').slice(0, 10);
+        return (!startDate || d >= startDate) && (!endDate || d <= endDate);
+      })
+      .reduce((sum, m) => sum + Math.abs(Number(m.qty)) * (costBasisByItem[m.item_id] ?? 0), 0);
   };
 
   const getPnlExpenses = () => {
@@ -119,26 +134,17 @@ export const Reports: React.FC = () => {
   const grossProfit = rev - cogs;
   const netProfit = grossProfit - exp;
 
-  // 2. AR & AP Aging calculations
-  // Outstanding balances list grouped by customers
-  const getSuppliersAging = () => {
-    return suppliers.map(s => {
-      const invoicesTotal = purchaseInvoices
-        .filter(i => i.supplier_id === s.id)
-        .reduce((sum, i) => sum + Number(i.total), 0);
-      const paidTotal = paymentVouchers
-        .filter(v => v.supplier_id === s.id)
-        .reduce((sum, v) => sum + Number(v.amount), 0);
-      const outstanding = Number(s.opening_balance) + invoicesTotal - paidTotal;
-      return {
-        ...s,
-        outstanding,
-        aging_0_30: outstanding * 0.7,
-        aging_31_90: outstanding * 0.2,
-        aging_90_plus: outstanding * 0.1
-      };
-    }).filter(s => s.outstanding > 0);
-  };
+  // Supplier (AP) aging — now real invoice-age buckets from
+  // PurchaseService.getSupplierAgingReport (loaded into supplierAging),
+  // mapped to this table's 1-30 / 31-90 / 90+ columns.
+  const getSuppliersAging = () => supplierAging.map((s) => ({
+    id: s.supplier_id,
+    name: s.name,
+    outstanding: s.total,
+    aging_0_30: s.bucket_0_30,
+    aging_31_90: s.bucket_31_60 + s.bucket_61_90,
+    aging_90_plus: s.bucket_90_plus
+  }));
 
   // 3. Inventory Valuation
   const calculateStock = (itemId: string) => {
@@ -153,8 +159,9 @@ export const Reports: React.FC = () => {
       const item = items.find(i => i.id === b.item_id);
       const actualQty = Number(b.actual_qty) || Number(b.planned_qty) || 1;
 
-      // Cost estimation based on average components
-      const matCost = actualQty * (Number(item?.default_price || 5) * 0.4);
+      // Real material cost: produced quantity valued at the finished item's
+      // unit cost basis (weighted-avg purchase / cost_price). 0 when unknown.
+      const matCost = actualQty * (costBasisByItem[b.item_id] ?? 0);
       const laborOverhead = actualQty * laborOverheadPerUnit;
       const totalCost = matCost + laborOverhead;
 
@@ -398,16 +405,20 @@ export const Reports: React.FC = () => {
                 <tbody className="divide-y divide-gray-100">
                   {items.map(item => {
                     const stock = calculateStock(item.id);
-                    const cost = Number(item.default_price) * 0.6;
-                    const totalVal = stock * cost;
+                    const cost = costBasisByItem[item.id];
+                    const totalVal = cost != null ? stock * cost : null;
 
                     return (
                       <tr key={item.id} className="hover:bg-gray-50">
                         <td className="py-3 px-4 font-bold text-gray-800">{item.name}</td>
                         <td className="py-3 px-4 text-gray-600">{typesArabic[item.type]}</td>
                         <td className="py-3 px-4 text-center font-bold font-mono">{stock}</td>
-                        <td className="py-3 px-4 text-center font-mono">{cost.toFixed(2)} ج.م</td>
-                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">{totalVal.toFixed(2)} ج.م</td>
+                        <td className="py-3 px-4 text-center font-mono">
+                          {cost != null ? `${cost.toFixed(2)} ج.م` : <span className="text-amber-600 text-xs">غير محددة</span>}
+                        </td>
+                        <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
+                          {totalVal != null ? `${totalVal.toFixed(2)} ج.م` : '—'}
+                        </td>
                       </tr>
                     );
                   })}

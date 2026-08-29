@@ -3,7 +3,7 @@ import {
   Item, StockMovement,
   Customer, SalesInvoice, SalesInvoiceLine, SalesReturn, SalesReturnLine,
   Supplier, PurchaseInvoice, PurchaseInvoiceLine,
-  Account, AccountTransaction, ReceiptVoucher, PaymentVoucher, CashVoucher,
+  Account, AccountTransaction, ReceiptVoucher, PaymentVoucher, CashVoucher, BranchCashSettlement,
   ItemRecipe, ProductionBatch, ProductionConsumption, ProductionRequest,
   Employee, Attendance, PayrollRun,
   Setting
@@ -64,6 +64,7 @@ export interface IPurchaseService {
   getInvoiceLines(invoiceId: string): Promise<PurchaseInvoiceLine[]>;
   getPaymentVouchers(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<PaymentVoucher>>;
   createPaymentVoucher(voucher: Omit<PaymentVoucher, 'id' | 'created_at' | 'updated_at'>): Promise<PaymentVoucher>;
+  getSupplierAgingReport(): Promise<{ supplier_id: string; name: string; bucket_0_30: number; bucket_31_60: number; bucket_61_90: number; bucket_90_plus: number; total: number }[]>;
 }
 
 // Accounting Service
@@ -79,12 +80,17 @@ export interface IAccountingService {
   getDailyCashPositionForWarehouse(date: string, warehouseId: string | null): Promise<number>;
   getCashVouchers(warehouseId: string | null): Promise<CashVoucher[]>;
   createCashVoucher(voucherType: 'receipt' | 'disbursement', amount: number, accountId: string, reason: string, warehouseId: string | null, date?: string): Promise<CashVoucher>;
+  getBranchUndepositedCash(branchWarehouseId: string): Promise<number>;
+  getBranchCashSettlements(branchWarehouseId: string | null): Promise<BranchCashSettlement[]>;
+  createBranchCashSettlement(branchWarehouseId: string, periodStart: string, periodEnd: string, depositedBy: string, notes?: string): Promise<BranchCashSettlement>;
+  confirmBranchCashSettlement(id: string, confirmedBy: string): Promise<BranchCashSettlement>;
 }
 
 // Manufacturing Service
 export interface IManufacturingService {
   getRecipes(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ItemRecipe>>;
   createRecipe(recipe: Omit<ItemRecipe, 'id' | 'created_at' | 'updated_at'>): Promise<ItemRecipe>;
+  itemHasRecipe(itemId: string, recipeType: 'batch' | 'packaging'): Promise<boolean>;
   getBatches(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionBatch>>;
   createBatch(batch: Omit<ProductionBatch, 'id' | 'created_at' | 'updated_at'>): Promise<ProductionBatch>;
   updateBatch(id: string, batch: Partial<ProductionBatch>): Promise<ProductionBatch>;
@@ -92,6 +98,7 @@ export interface IManufacturingService {
   getBatchConsumptions(batchId: string): Promise<ProductionConsumption[]>;
   createProductionRequest(itemId: string, requestedQty: number, requestedBy: string, rawMaterialWarehouseId: string, notes?: string): Promise<ProductionRequest>;
   getProductionRequests(filter?: EntityFilter, params?: PaginationParams): Promise<PaginatedResult<ProductionRequest>>;
+  getProductionMaterialPlan(itemId: string, outputQty: number, rawWarehouseId: string): Promise<{ component_item_id: string; requiredQty: number; onHand: number; shortfall: number }[]>;
   approveProductionRequestMaterials(requestId: string, approvedBy: string): Promise<ProductionRequest>;
   rejectProductionRequest(requestId: string, rejectedBy: string, reason: string): Promise<ProductionRequest>;
   startProductionFromRequest(requestId: string, plannedQty: number): Promise<ProductionBatch>;

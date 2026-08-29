@@ -19,6 +19,28 @@ export class AnalyticsService {
   private salesInvoiceRepository = RepositoryFactory.getSalesInvoiceRepository();
   private salesInvoiceLineRepository = RepositoryFactory.getSalesInvoiceLineRepository();
   private itemRepository = RepositoryFactory.getItemRepository();
+  private purchaseInvoiceLineRepository = RepositoryFactory.getPurchaseInvoiceLineRepository();
+
+  // Real unit cost for an item: the weighted-average purchase price from
+  // purchase_invoice_lines (Σ qty·unit_price / Σ qty), falling back to the
+  // item's own cost_price, then to null when nothing is known. Callers show
+  // "التكلفة غير محددة" for null instead of inventing a ratio of the retail
+  // price.
+  async getItemCostBasis(itemId: string): Promise<number | null> {
+    const lines = await this.purchaseInvoiceLineRepository.findByItemId(itemId);
+    let qty = 0;
+    let value = 0;
+    for (const l of lines) {
+      const q = Number(l.qty) || 0;
+      qty += q;
+      value += q * (Number(l.unit_price) || 0);
+    }
+    if (qty > 0) return value / qty;
+
+    const item = await this.itemRepository.findById(itemId);
+    const cp = Number(item?.cost_price);
+    return Number.isFinite(cp) && cp > 0 ? cp : null;
+  }
 
   async getProductPerformance(startDate: string, endDate: string): Promise<ProductPerformance[]> {
     const invoices = (await this.salesInvoiceRepository.findByDateRange(startDate, endDate))

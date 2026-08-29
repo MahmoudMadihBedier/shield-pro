@@ -8,13 +8,15 @@ import { PaginationParams } from '../../core/types';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
 import { CashVouchers } from './CashVouchers';
+import { BranchCashSettlements } from './BranchCashSettlements';
 import {
   DollarSign,
   TrendingUp,
   Percent,
   TrendingDown,
   Building,
-  Wallet
+  Wallet,
+  Landmark
 } from 'lucide-react';
 
 // Stable reference (not recreated per render) so the data hooks below don't
@@ -24,7 +26,7 @@ const UNPAGINATED: PaginationParams = { page: 1, limit: 100000 };
 
 export const Accounting: React.FC = () => {
   // Tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity' | 'vouchers'>('liquidity');
+  const [activeSubTab, setActiveSubTab] = useState<'ledgers' | 'assets' | 'expenses' | 'liquidity' | 'vouchers' | 'settlements'>('liquidity');
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
   const { accounts: accountsResult, getCashBankBalance } = useAccounts();
@@ -220,12 +222,21 @@ export const Accounting: React.FC = () => {
     }, 0);
   };
 
+  // Book value of inventory = the balance of the 'inventory' account
+  // (debited when goods are purchased). Falls back to valuing on-hand
+  // quantities at each item's cost_price (never a % of the retail price).
   const calculateInventoryValuation = () => {
+    const invAcc = accounts.find((a: any) => a.category === 'inventory');
+    if (invAcc) {
+      return transactions
+        .filter((tx: any) => tx.account_id === invAcc.id)
+        .reduce((s, tx) => s + Number(tx.debit) - Number(tx.credit), 0);
+    }
     return items.reduce((sum, item) => {
       const stock = stockMovements
         .filter((m: any) => m.item_id === item.id)
         .reduce((s, m) => s + Number(m.qty), 0);
-      const cost = Number(item.default_price) * 0.6; // estimate cost at 60% of retail
+      const cost = Number(item.cost_price) || 0;
       return sum + (stock * cost);
     }, 0);
   };
@@ -293,9 +304,19 @@ export const Accounting: React.FC = () => {
           <Wallet className="h-4 w-4" />
           <span>سندات القبض والصرف العامة</span>
         </button>
+        <button
+          onClick={() => setActiveSubTab('settlements')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
+            activeSubTab === 'settlements' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          <Landmark className="h-4 w-4" />
+          <span>تسويات الخزينة</span>
+        </button>
       </div>
 
       {activeSubTab === 'vouchers' && <CashVouchers />}
+      {activeSubTab === 'settlements' && <BranchCashSettlements />}
 
       {activeSubTab === 'liquidity' && (
         <div className="space-y-6">

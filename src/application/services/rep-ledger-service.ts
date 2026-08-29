@@ -1,6 +1,6 @@
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
-import { RepCloseoutSession } from '../../core/domain/entities';
+import { RepCloseoutSession, RepStockRequest, RepStockRequestLine } from '../../core/domain/entities';
 import { assertSegregationOfDuties } from './segregation-of-duties-guard';
 
 // Phase 2.4 of SHIELD_PRO_REFACTOR_MASTER_PLAN.md — every sales rep is
@@ -12,6 +12,8 @@ export class RepLedgerService {
   private repStockLedgerRepository = RepositoryFactory.getRepStockLedgerRepository();
   private repCashLedgerRepository = RepositoryFactory.getRepCashLedgerRepository();
   private repCloseoutSessionRepository = RepositoryFactory.getRepCloseoutSessionRepository();
+  private repStockRequestRepository = RepositoryFactory.getRepStockRequestRepository();
+  private repStockRequestLineRepository = RepositoryFactory.getRepStockRequestLineRepository();
   private stockMovementRepository = RepositoryFactory.getStockMovementRepository();
 
   // Branch Warehouse Manager (or admin) issues stock to a rep. Deducts the
@@ -118,6 +120,98 @@ export class RepLedgerService {
       moved_at: new Date().toISOString()
     });
     await queueOfflineWrite('rep_cash_ledger', 'insert', entry.id, entry);
+  }
+
+  // ---- Rep stock requests (rep -> branch keeper dual sign-off) -----------
+
+  async createRepStockRequest(
+    repUserId: string,
+    warehouseId: string,
+    requestedBy: string,
+    lines: { item_id: string; qty: number }[],
+    notes?: string
+  ): Promise<RepStockRequest> {
+    const clean = lines.filter((l) => l.item_id && Math.abs(Number(l.qty)) > 0);
+    if (clean.length === 0) throw new Error('أضف صنفاً واحداً على الأقل بكمية صحيحة.');
+
+    const request = await this.repStockRequestRepository.create({
+      rep_user_id: repUserId,
+      warehouse_id: warehouseId,
+      requested_by: requestedBy,
+      status: 'pending_approval'
+    } as Omit<RepStockRequest, 'id' | 'created_at' | 'updated_at'>);
+    await queueOfflineWrite('rep_stock_requests', 'insert', request.id, { ...request, notes: notes || null });
+
+    for (const l of clean) {
+      const line = await this.repStockRequestLineRepository.create({
+        request_id: request.id,
+        item_id: l.item_id,
+        requested_qty: Math.abs(Number(l.qty))
+      } as Omit<RepStockRequestLine, 'id' | 'created_at' | 'updated_at'>);
+      await queueOfflineWrite('rep_stock_request_lines', 'insert', line.id, line);
+    }
+    return request;
+  }
+
+  async getRepStockRequests(): Promise<RepStockRequest[]> {
+    return await this.repStockRequestRepository.findAll().then((r) => r.data);
+  }
+
+  async getRepStockRequestLines(requestId: string): Promise<RepStockRequestLine[]> {
+    return await this.repStockRequestLineRepository.findByRequestId(requestId);
+  }
+
+  // Branch keeper approves: checks the branch can cover every line, then
+  // issues the stock into the rep's van (paired rep_issue movement +
+  // rep_stock_ledger 'issued') and marks the request 'issued'. SoD
+  // (approver != rep, approver != requester) is also enforced server-side.
+  async approveRepStockRequest(requestId: string, approvedBy: string): Promise<RepStockRequest> {
+    const request = await this.repStockRequestRepository.findById(requestId);
+    if (!request) throw new Error('طلب صرف العهدة غير موجود');
+    if (request.status !== 'pending_approval') throw new Error('لا يمكن اعتماد هذا الطلب في حالته الحالية.');
+    assertSegregationOfDuties({ requestedBy: request.requested_by, actingUserId: approvedBy, action: 'اعتماد صرف عهدة المندوب' });
+    if (approvedBy === request.rep_user_id) {
+      throw new Error('لا يجوز للمندوب اعتماد طلب صرف عهدته بنفسه (فصل المهام).');
+    }
+
+    const lines = await this.repStockRequestLineRepository.findByRequestId(requestId);
+    if (lines.length === 0) throw new Error('لا توجد أصناف في هذا الطلب.');
+
+    const short: string[] = [];
+    for (const l of lines) {
+      const have = await this.stockMovementRepository.calculateStock(l.item_id, request.warehouse_id);
+      if (have + 1e-9 < Number(l.requested_qty)) short.push(`${l.item_id} (متاح ${have.toFixed(2)} / مطلوب ${Number(l.requested_qty).toFixed(2)})`);
+    }
+    if (short.length > 0) throw new Error(`رصيد المخزن لا يكفي: ${short.join('، ')}`);
+
+    // Mark approved first so the SoD trigger sees approved_by, then issue.
+    const approved = await this.repStockRequestRepository.update(requestId, {
+      status: 'approved',
+      approved_by: approvedBy,
+      approved_at: new Date().toISOString()
+    });
+    await queueOfflineWrite('rep_stock_requests', 'update', requestId, approved);
+
+    await this.issueStockToRep(
+      request.rep_user_id,
+      request.warehouse_id,
+      lines.map((l) => ({ item_id: l.item_id, qty: Number(l.requested_qty) }))
+    );
+
+    const issued = await this.repStockRequestRepository.update(requestId, { status: 'issued' });
+    await queueOfflineWrite('rep_stock_requests', 'update', requestId, issued);
+    return issued;
+  }
+
+  async rejectRepStockRequest(requestId: string, rejectedBy: string, reason: string): Promise<RepStockRequest> {
+    const updated = await this.repStockRequestRepository.update(requestId, {
+      status: 'rejected',
+      approved_by: rejectedBy,
+      approved_at: new Date().toISOString(),
+      rejection_reason: reason
+    });
+    await queueOfflineWrite('rep_stock_requests', 'update', requestId, updated);
+    return updated;
   }
 
   async getRepStockBalances(repUserId: string) {

@@ -93,7 +93,10 @@ export const Purchases: React.FC = () => {
 
   useEffect(() => {
     if (warehouses.length > 0 && !invWarehouse) {
-      setInvWarehouse(warehouses[0].id);
+      // Default the goods-receipt destination to the raw-materials store if
+      // one is configured, otherwise the first warehouse.
+      const rawStore = warehouses.find((w) => w.kind === 'raw_materials');
+      setInvWarehouse((rawStore || warehouses[0]).id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouses]);
@@ -257,9 +260,14 @@ export const Purchases: React.FC = () => {
     const supp = suppliers.find((s: any) => s.id === statementSuppId);
     if (!supp) return;
 
-    // Opening Balance
+    // Opening Balance — dated to when the supplier was registered; fall back
+    // to the earliest known invoice date rather than a hardcoded year.
+    const earliestInvDate = purchaseInvoices
+      .filter((i: any) => i.supplier_id === statementSuppId)
+      .map((i: any) => i.date)
+      .sort()[0];
     listTransactions.push({
-      date: supp.created_at?.split('T')[0] || '2026-01-01',
+      date: supp.created_at?.split('T')[0] || earliestInvDate || new Date().toISOString().split('T')[0],
       desc: 'الرصيد الافتتاحي عند التسجيل',
       debit: 0,
       credit: Number(supp.opening_balance) || 0,
@@ -482,9 +490,12 @@ export const Purchases: React.FC = () => {
                   className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
                 >
                   {warehouses.map(w => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
+                    <option key={w.id} value={w.id}>
+                      {w.name}{w.kind === 'raw_materials' ? ' — مخزن الخامات' : w.kind === 'factory' ? ' — مخزن المصنع' : ''}
+                    </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-gray-400 mt-1">تُضاف الكميات المشتراة كرصيد في هذا المخزن، ويُسجَّل القيد: مدين «المخزون» / دائن «النقدية» أو «الموردين».</p>
               </div>
 
               <div>

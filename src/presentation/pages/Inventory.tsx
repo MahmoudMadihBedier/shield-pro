@@ -10,6 +10,20 @@ import {
   Search
 } from 'lucide-react';
 
+const MOVEMENT_TYPE_AR: Record<string, string> = {
+  purchase_in: 'استلام مشتريات',
+  sale_out: 'صرف مبيعات',
+  production_consumption: 'استهلاك إنتاج',
+  production_output: 'ناتج إنتاج',
+  sales_return_in: 'مرتجع مبيعات (وارد)',
+  purchase_return_out: 'مرتجع مشتريات (صادر)',
+  manual_adjustment: 'تسوية يدوية',
+  transfer_out: 'تحويل صادر',
+  transfer_in: 'تحويل وارد',
+  rep_issue: 'صرف لعهدة مندوب',
+  rep_return: 'إرجاع من عهدة مندوب'
+};
+
 export const Inventory: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'items' | 'adjustments' | 'card'>('items');
   const [searchQuery, setSearchQuery] = useState('');
@@ -208,9 +222,9 @@ export const Inventory: React.FC = () => {
             >
               <option value="all">جميع الأنواع</option>
               <option value="raw_material">مواد خام</option>
+              <option value="intermediate">منتج وسيط (سائل صب)</option>
               <option value="finished_good">منتج تام</option>
               <option value="packaging">تغليف</option>
-              <option value="consumable">مستهلكات</option>
             </select>
             <button
               onClick={handleSearch}
@@ -297,9 +311,9 @@ export const Inventory: React.FC = () => {
                   className="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="raw_material">مادة خام</option>
+                  <option value="intermediate">منتج وسيط (سائل صب)</option>
                   <option value="finished_good">منتج تام</option>
                   <option value="packaging">تغليف</option>
-                  <option value="consumable">مستهلكات</option>
                 </select>
               </div>
               <div>
@@ -492,11 +506,15 @@ export const Inventory: React.FC = () => {
                   {movements.data.map((movement: any) => (
                     <tr key={movement.id} className="hover:bg-gray-50">
                       <td className="py-3 px-4 text-gray-500">
-                        {new Date(movement.created_at).toLocaleDateString('ar-EG')}
+                        {new Date(movement.moved_at || movement.created_at).toLocaleDateString('ar-EG')}
                       </td>
-                      <td className="py-3 px-4 font-medium">{movement.item_id}</td>
-                      <td className="py-3 px-4 text-gray-600">{movement.warehouse_id}</td>
-                      <td className="py-3 px-4 text-gray-500">{movement.movement_type}</td>
+                      <td className="py-3 px-4 font-medium">
+                        {items.data.find((i) => i.id === movement.item_id)?.name || movement.item_id}
+                      </td>
+                      <td className="py-3 px-4 text-gray-600">
+                        {warehouses.find((w) => w.id === movement.warehouse_id)?.name || movement.warehouse_id}
+                      </td>
+                      <td className="py-3 px-4 text-gray-500">{MOVEMENT_TYPE_AR[movement.movement_type] || movement.movement_type}</td>
                       <td className={`py-3 px-4 font-mono font-bold ${movement.qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {movement.qty}
                       </td>

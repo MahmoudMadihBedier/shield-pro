@@ -9,6 +9,7 @@ import {
   ISettingRepository, IAuditLogRepository, IUserLocationRepository,
   ITaskRepository, IEmployeeReportRepository, IBonusRepository, IPunishmentRepository,
   IRepStockLedgerRepository, IRepCashLedgerRepository, IRepCloseoutSessionRepository,
+  IRepStockRequestRepository, IRepStockRequestLineRepository, IBranchCashSettlementRepository,
   IProductionRequestRepository, IDistributionOrderRepository, IDistributionOrderLineRepository,
   ICashVoucherRepository, IApprovalRuleRepository, IApprovalRuleLogRepository, IFraudFlagRepository,
   IReturnWriteoffRequestRepository, IStockCountSessionRepository, IStockCountLineRepository,
@@ -55,6 +56,9 @@ import { RepCloseoutSessionRepository } from './repositories/rep-closeout-sessio
 import { ProductionRequestRepository } from './repositories/production-request-repository';
 import { DistributionOrderRepository } from './repositories/distribution-order-repository';
 import { DistributionOrderLineRepository } from './repositories/distribution-order-line-repository';
+import { RepStockRequestRepository } from './repositories/rep-stock-request-repository';
+import { RepStockRequestLineRepository } from './repositories/rep-stock-request-line-repository';
+import { BranchCashSettlementRepository } from './repositories/branch-cash-settlement-repository';
 import { CashVoucherRepository } from './repositories/cash-voucher-repository';
 import { ApprovalRuleRepository } from './repositories/approval-rule-repository';
 import { ApprovalRuleLogRepository } from './repositories/approval-rule-log-repository';
@@ -355,6 +359,27 @@ export class RepositoryFactory {
       instances.distributionOrderLineRepository = new DistributionOrderLineRepository();
     }
     return instances.distributionOrderLineRepository;
+  }
+
+  static getRepStockRequestRepository(): IRepStockRequestRepository {
+    if (!instances.repStockRequestRepository) {
+      instances.repStockRequestRepository = new RepStockRequestRepository();
+    }
+    return instances.repStockRequestRepository;
+  }
+
+  static getRepStockRequestLineRepository(): IRepStockRequestLineRepository {
+    if (!instances.repStockRequestLineRepository) {
+      instances.repStockRequestLineRepository = new RepStockRequestLineRepository();
+    }
+    return instances.repStockRequestLineRepository;
+  }
+
+  static getBranchCashSettlementRepository(): IBranchCashSettlementRepository {
+    if (!instances.branchCashSettlementRepository) {
+      instances.branchCashSettlementRepository = new BranchCashSettlementRepository();
+    }
+    return instances.branchCashSettlementRepository;
   }
 
   static getCashVoucherRepository(): ICashVoucherRepository {

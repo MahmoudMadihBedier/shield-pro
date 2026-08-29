@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { RepositoryFactory } from '../../infrastructure/database/repository-factory';
+import { ServiceFactory } from '../../application/services/service-factory';
+import { db } from '../../infrastructure/database/dexie';
 import { getSetting, getSettingBool } from '../../shared/utils/settings-helper';
 import { formatCurrency, formatDate } from '../../shared/utils/format';
 import { getErrorMessage } from '../../shared/utils/errors';
@@ -96,6 +98,12 @@ export const Sales: React.FC = () => {
   const [invLines, setInvLines] = useState<any[]>([{ item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
   const [invDiscount, setInvDiscount] = useState('0'); // invoice level discount
 
+  // Van sale: bill against a rep's stock-in-hand instead of a warehouse.
+  const [vanSale, setVanSale] = useState(false);
+  const [vanRepId, setVanRepId] = useState('');
+  const [repUsers, setRepUsers] = useState<any[]>([]);
+  const [vanBalances, setVanBalances] = useState<{ item_id: string; balance: number }[]>([]);
+
   // Settings Cache
   const [vatEnabled, setVatEnabled] = useState(false);
   const [vatPct, setVatPct] = useState(14);
@@ -130,6 +138,25 @@ export const Sales: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [warehouses]);
+
+  // Rep directory for the van-sale picker; default to the current user if
+  // they are the one making a field sale.
+  useEffect(() => {
+    db.users.toArray().then((all) => {
+      setRepUsers(all);
+      if (!vanRepId && profile?.id) setVanRepId(profile.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
+
+  // Load the selected rep's van balances whenever van-sale is on.
+  useEffect(() => {
+    if (!vanSale || !vanRepId) { setVanBalances([]); return; }
+    ServiceFactory.getRepLedgerService().getRepStockBalances(vanRepId)
+      .then((b) => setVanBalances(b.filter((x) => x.balance !== 0)));
+  }, [vanSale, vanRepId]);
+
+  const vanBalanceOf = (itemId: string) => vanBalances.find((b) => b.item_id === itemId)?.balance ?? 0;
 
   useEffect(() => {
     const financial = accounts.filter((a) => a.category === 'cash' || a.category === 'bank');
@@ -362,6 +389,16 @@ export const Sales: React.FC = () => {
       return;
     }
 
+    if (vanSale) {
+      if (!vanRepId) { error('اختر المندوب صاحب العهدة.'); return; }
+      const over = invLines.find((l: any) => l.item_id && Number(l.qty) > vanBalanceOf(l.item_id));
+      if (over) {
+        const it = allItems.find((i: any) => i.id === over.item_id);
+        error(`الكمية المطلوبة من «${it?.name || over.item_id}» تتجاوز رصيد عهدة المندوب (${vanBalanceOf(over.item_id)}).`);
+        return;
+      }
+    }
+
     try {
       const sub = calculateInvoiceSubtotal();
       const disc = Number(invDiscount) || 0;
@@ -399,12 +436,17 @@ export const Sales: React.FC = () => {
           lng
         },
         lines,
-        invWarehouse
+        invWarehouse,
+        vanSale && vanRepId ? { repUserId: vanRepId } : undefined
       );
 
       setInvDiscount('0');
       setInvLines([{ item_id: '', qty: 1, unit_price: 0, discount: 0 }]);
-      success('تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
+      if (vanSale && vanRepId) {
+        ServiceFactory.getRepLedgerService().getRepStockBalances(vanRepId)
+          .then((b) => setVanBalances(b.filter((x) => x.balance !== 0)));
+      }
+      success(vanSale ? 'تم حفظ فاتورة بيع ميداني وخصمها من عهدة المندوب!' : 'تم حفظ فاتورة المبيعات وصرف البضاعة بنجاح!');
 
       const customerName = customers.find((c) => c.id === invCustomer)?.name || '';
       printReceipt(newInvoice, lines, customerName);
@@ -859,6 +901,41 @@ export const Sales: React.FC = () => {
                   <option value="bank">حوالة بنكية</option>
                 </select>
               </div>
+            </div>
+
+            {/* Van sale: bill against a rep's stock-in-hand instead of the warehouse */}
+            <div className="mb-6 bg-indigo-50 border border-indigo-200 p-4 rounded">
+              <label className="flex items-center gap-2 text-sm font-bold text-indigo-800 cursor-pointer">
+                <input type="checkbox" checked={vanSale} onChange={(e) => setVanSale(e.target.checked)} />
+                بيع من عهدة مندوب (بيع ميداني) — تُخصم الكمية من عهدة المندوب لا من المخزن
+              </label>
+              {vanSale && (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-1">المندوب صاحب العهدة</label>
+                    <select
+                      value={vanRepId}
+                      onChange={(e) => setVanRepId(e.target.value)}
+                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
+                    >
+                      <option value="">-- اختر --</option>
+                      {repUsers.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+                    </select>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    {vanBalances.length === 0
+                      ? 'لا توجد بضاعة في عهدة هذا المندوب حالياً.'
+                      : (
+                        <>
+                          <div className="font-bold mb-0.5">رصيد العهدة الحالي:</div>
+                          {vanBalances.map((b) => (
+                            <span key={b.item_id} className="inline-block mr-2">{itemNamesById[b.item_id] || b.item_id}: <span className="font-mono">{b.balance}</span></span>
+                          ))}
+                        </>
+                      )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Lines rows */}
