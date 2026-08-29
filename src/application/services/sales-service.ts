@@ -134,8 +134,13 @@ export class SalesService implements ISalesService {
     // warehouse_id drives RLS branch-scoping on sales_invoices (NOT NULL —
     // every invoice must be attributed to the branch it was sold from), so
     // it's derived from the warehouseId param rather than left for the
-    // caller to set independently on the invoice object.
-    const newInvoice = await this.salesInvoiceRepository.create({ ...invoice, warehouse_id: warehouseId });
+    // caller to set independently on the invoice object. rep_user_id is set
+    // only for a van sale, so reports can split field vs counter sales.
+    const newInvoice = await this.salesInvoiceRepository.create({
+      ...invoice,
+      warehouse_id: warehouseId,
+      rep_user_id: repIssuance?.repUserId ?? null
+    });
     await queueOfflineWrite('sales_invoices', 'insert', newInvoice.id, newInvoice);
 
     const createdLines: SalesInvoiceLine[] = [];
