@@ -3,10 +3,7 @@ import { db } from '../../infrastructure/database/dexie';
 import { queueOfflineWrite } from '../../infrastructure/sync/sync-service';
 import { getSetting } from '../../shared/utils/settings-helper';
 import { useAuth } from '../../application/services/auth-service';
-import { ServiceFactory } from '../../application/services/service-factory';
-import { getErrorMessage } from '../../shared/utils/errors';
-import { useToast } from './ui/Toast';
-import { ProductionRequests } from './ProductionRequests';
+import { WorkOrders } from './WorkOrders';
 import {
   Settings,
   Plus,
@@ -14,8 +11,7 @@ import {
   Info,
   Layers,
   ClipboardList,
-  FlaskConical,
-  PackageCheck
+  FlaskConical
 } from 'lucide-react';
 
 const typesArabic: { [key: string]: string } = {
@@ -36,11 +32,9 @@ const BATCH_STATUS: { [k: string]: { text: string; cls: string } } = {
 
 export const Manufacturing: React.FC = () => {
   const { checkPermission } = useAuth();
-  const { success, error } = useToast();
-  const manufacturingService = ServiceFactory.getManufacturingService();
   const canEditRecipes = checkPermission('manufacturing', 'add') || checkPermission('manufacturing', 'edit');
 
-  const [activeSubTab, setActiveSubTab] = useState<'recipes' | 'requests' | 'produce' | 'batches'>('recipes');
+  const [activeSubTab, setActiveSubTab] = useState<'recipes' | 'requests' | 'batches'>('recipes');
 
   // Master lists
   const [items, setItems] = useState<any[]>([]);
@@ -48,10 +42,6 @@ export const Manufacturing: React.FC = () => {
   const [productionBatches, setProductionBatches] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [laborOverheadPerUnit, setLaborOverheadPerUnit] = useState(0);
-
-  // «تسجيل الإنتاج الفعلي» — per-draft-batch actual qty + waste inputs
-  const [produceInputs, setProduceInputs] = useState<Record<string, { qty: string; waste: string }>>({});
-  const [producing, setProducing] = useState(false);
 
   // Recipe Editor State
   const [recipeParentId, setRecipeParentId] = useState('');
@@ -183,39 +173,13 @@ export const Manufacturing: React.FC = () => {
   const itemName = (id: string) => items.find((i: any) => i.id === id)?.name || id;
   const warehouseName = (id: string) => warehouses.find((w: any) => w.id === id)?.name || (id ? id.slice(0, 8) : '-');
 
-  // Batches that were started from an approved production request but whose
-  // actual produced quantity hasn't been recorded yet. Recording it (via
-  // completeBatch) consumes the raw materials at the factory store and sends
-  // the batch to quality check.
-  const draftBatches = productionBatches.filter((b: any) => b.status === 'draft');
-
-  const handleRecordProduction = async (batch: any) => {
-    const input = produceInputs[batch.id] || { qty: '', waste: '' };
-    const actualQty = Number(input.qty || batch.planned_qty);
-    const wastePct = Number(input.waste || 0);
-    if (!actualQty || actualQty <= 0) {
-      error('اكتب الكمية اللي طلعت فعلاً من الدفعة');
-      return;
-    }
-    setProducing(true);
-    try {
-      await manufacturingService.completeBatch(batch.id, actualQty, wastePct, batch.warehouse_id || '');
-      success('اتسجّل إنتاج الدفعة — راحت لفحص الجودة في شاشة «ضوابط المخزون»');
-      await loadData();
-    } catch (e) {
-      error(getErrorMessage(e, 'تعذّر تسجيل الإنتاج'));
-    } finally {
-      setProducing(false);
-    }
-  };
-
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto" dir="rtl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">إدارة التصنيع والتركيبات / Manufacturing</h1>
+        <h1 className="text-2xl font-bold text-gray-900">التصنيع والتركيبات</h1>
         <p className="text-gray-500 text-sm mt-1">
-          عرّف مكوّنات المنتج، وبعدين شغّله من «طلبات الإنتاج»: طلب ← اعتماد صرف الخامات ← بدء ←
-          «تسجيل الإنتاج الفعلي» ← فحص الجودة (من شاشة «ضوابط المخزون») ← تحويل للمخزن الرئيسي.
+          عرّف مكوّنات المنتج (BOM)، وبعدين شغّله من «أوامر التشغيل»: أمر ← اعتماد صرف الخامات ← بدء ←
+          تسجيل الإنتاج الفعلي ← فحص الجودة (شاشة «ضوابط المخزون») ← تحويل للمخزن الرئيسي.
         </p>
       </div>
 
@@ -237,21 +201,7 @@ export const Manufacturing: React.FC = () => {
           }`}
         >
           <ClipboardList className="h-4 w-4" />
-          <span>طلبات الإنتاج</span>
-        </button>
-        <button
-          onClick={() => setActiveSubTab('produce')}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
-            activeSubTab === 'produce' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <PackageCheck className="h-4 w-4" />
-          <span>تسجيل الإنتاج الفعلي</span>
-          {draftBatches.length > 0 && (
-            <span className="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] text-center">
-              {draftBatches.length}
-            </span>
-          )}
+          <span>أوامر التشغيل</span>
         </button>
         <button
           onClick={() => setActiveSubTab('batches')}
@@ -264,7 +214,7 @@ export const Manufacturing: React.FC = () => {
         </button>
       </div>
 
-      {activeSubTab === 'requests' && <ProductionRequests />}
+      {activeSubTab === 'requests' && <WorkOrders />}
 
       {activeSubTab === 'recipes' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -451,68 +401,6 @@ export const Manufacturing: React.FC = () => {
         </div>
       )}
 
-      {activeSubTab === 'produce' && (
-        <div className="bg-white p-5 rounded-lg border shadow">
-          <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-            <PackageCheck className="h-5 w-5 text-blue-600" />
-            <span>تسجيل الإنتاج الفعلي</span>
-          </h3>
-          <p className="text-xs text-gray-500 mb-4">
-            لما تبدأ دفعة إنتاج من «طلبات الإنتاج»، تظهر هنا. اكتب الكمية اللي طلعت فعلاً ونسبة الفاقد،
-            واضغط «سجّل الإنتاج» — النظام يصرف الخامات من مخزن المصنع ويبعت الدفعة لفحص الجودة.
-          </p>
-          {draftBatches.length === 0 ? (
-            <p className="text-gray-400 italic text-sm py-6 text-center">
-              مفيش دفعات بانتظار تسجيل الإنتاج. ابدأ دفعة من تبويب «طلبات الإنتاج» الأول.
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {draftBatches.map((b: any) => {
-                const input = produceInputs[b.id] || { qty: '', waste: '' };
-                return (
-                  <div key={b.id} className="border rounded-lg p-3 flex flex-wrap items-end justify-between gap-3">
-                    <div className="min-w-[180px]">
-                      <div className="font-bold text-gray-800">{itemName(b.item_id)}</div>
-                      <div className="text-xs text-gray-500 font-mono">{b.batch_no}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        الكمية المخططة: {b.planned_qty} · مخزن المصنع: {b.warehouse_id ? warehouseName(b.warehouse_id) : '—'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">الكمية اللي طلعت فعلاً</label>
-                      <input
-                        type="number" min={0} step="any"
-                        placeholder={String(b.planned_qty)}
-                        value={input.qty}
-                        onChange={(e) => setProduceInputs({ ...produceInputs, [b.id]: { ...input, qty: e.target.value } })}
-                        className="border rounded p-2 text-sm w-28"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-500 block mb-1">نسبة الفاقد %</label>
-                      <input
-                        type="number" min={0} max={100} step="any"
-                        placeholder="0"
-                        value={input.waste}
-                        onChange={(e) => setProduceInputs({ ...produceInputs, [b.id]: { ...input, waste: e.target.value } })}
-                        className="border rounded p-2 text-sm w-24"
-                      />
-                    </div>
-                    <button
-                      onClick={() => handleRecordProduction(b)}
-                      disabled={producing}
-                      className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      سجّل الإنتاج
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
       {activeSubTab === 'batches' && (
         <div className="bg-white p-5 rounded-lg border shadow">
           <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
@@ -520,8 +408,8 @@ export const Manufacturing: React.FC = () => {
             <span>سجل دفعات الإنتاج</span>
           </h3>
           <p className="text-xs text-gray-500 mb-4">
-            تُنشأ الدفعات من تبويب «طلبات الإنتاج». الدفعات «بانتظار فحص الجودة» تُعتمد من شاشة «ضوابط المخزون (QC/جرد)» —
-            وعندها فقط يُضاف رصيد المنتج التام إلى مخزن المصنع، ثم يُنقل إلى المخزن الرئيسي بطلب توزيع.
+            الدفعات بتتعمل من تبويب «أوامر التشغيل». اللي «بانتظار فحص الجودة» بتتعمد من شاشة «ضوابط المخزون» —
+            وساعتها بس يتضاف رصيد المنتج التام لمخزن المصنع، وبعدها يتحوّل للمخزن الرئيسي.
           </p>
           {productionBatches.length === 0 ? (
             <p className="text-gray-400 italic text-sm py-6 text-center">لا يوجد سجل دفعات إنتاج بعد.</p>
