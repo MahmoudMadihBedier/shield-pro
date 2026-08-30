@@ -15,8 +15,15 @@ import { Warehouse } from '../../core/domain/entities';
 import { PaginationParams, EntityFilter } from '../../core/types';
 import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
 import { useToast } from './ui/Toast';
+import { useConfirm } from './ui/ConfirmDialog';
+import { FormField } from './ui/ValidationMessage';
 import { PageHeader } from './ui/PageHeader';
 import { Tabs } from './ui/Tabs';
+import { DocList, type DocColumn } from './ui/DocList';
+import { EntitySelect } from './ui/EntitySelect';
+import { NumberInput, MoneyInput } from './ui/NumberInput';
+import { StatusBadge } from './ui/StatusBadge';
+import { enumLabel } from '../../shared/i18n/labels';
 import { SalesCustomers } from './SalesCustomers';
 import { CardAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
 import {
@@ -38,6 +45,7 @@ const PACKAGING_RECIPE_FILTER: EntityFilter = { recipe_type: 'packaging' };
 export const Sales: React.FC = () => {
   const { success, error, warning } = useToast();
   const { profile } = useAuth();
+  const confirm = useConfirm();
 
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
@@ -253,6 +261,14 @@ export const Sales: React.FC = () => {
     });
   };
 
+  const invoiceColumns: DocColumn<any>[] = [
+    { key: 'no', label: 'رقم الفاتورة', primary: true, render: (i) => String(i.invoice_no).startsWith('PENDING-') ? 'قيد الحفظ' : i.invoice_no },
+    { key: 'customer', label: 'العميل', render: (i) => customers.find((c) => c.id === i.customer_id)?.name || '—' },
+    { key: 'date', label: 'التاريخ', hideOnCard: true, render: (i) => formatDate(i.date) },
+    { key: 'total', label: 'الإجمالي', render: (i) => <span className="font-mono">{formatCurrency(Number(i.total))}</span> },
+    { key: 'status', label: 'الحالة', render: (i) => <StatusBadge group="invoiceStatus" value={i.status} /> },
+  ];
+
   const printReceipt = (invoice: any, lines: any[], customerName: string) => {
     const win = window.open('', '_blank', 'width=380,height=600');
     if (!win) return;
@@ -294,6 +310,13 @@ export const Sales: React.FC = () => {
         return;
       }
     }
+
+    const totalPreview = calculateInvoiceTotal();
+    if (!(await confirm({
+      title: 'حفظ واعتماد الفاتورة؟',
+      message: `الإجمالي ${formatCurrency(totalPreview)}. هيتصرف المخزون ${vanSale ? 'من عهدة المندوب' : 'من مخزن الصرف'} وتتسجّل الحركة المالية — مش هينفع تتراجع.`,
+      confirmText: 'حفظ واعتماد',
+    }))) return;
 
     try {
       const sub = calculateInvoiceSubtotal();
@@ -418,237 +441,130 @@ export const Sales: React.FC = () => {
       {activeSubTab === 'customers' && <SalesCustomers />}
 
       {activeSubTab === 'invoices' && (
-        <TabContentAnimation>
-          <form onSubmit={handleSaveInvoice} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Invoice Lines Table */}
-            <CardAnimation delay={0.1} className="lg:col-span-3 bg-white p-6 rounded-lg border shadow">
-              <h3 className="text-lg font-bold text-gray-800 border-b pb-3 mb-6 flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-600" />
-                تحرير فاتورة مبيعات جديدة
-              </h3>
+        <div className="space-y-6">
+          <DocList
+            rows={salesInvoices}
+            columns={invoiceColumns}
+            getId={(i) => i.id}
+            search={(i, q) => (String(i.invoice_no) + ' ' + (customers.find((c) => c.id === i.customer_id)?.name || '')).toLowerCase().includes(q.toLowerCase())}
+            emptyTitle="لسه مفيش فواتير"
+            emptyHint="اعمل أول فاتورة من الفورم اللي تحت."
+          />
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-gray-50 p-4 rounded border">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">العميل</label>
-                <select
-                  required
-                  value={invCustomer}
-                  onChange={(e) => setInvCustomer(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
-                >
-                  {customers.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.client_id ? `(${c.client_id})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">مخزن الصرف</label>
-                <select
-                  required
-                  value={invWarehouse}
-                  onChange={(e) => setInvWarehouse(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                >
-                  {warehouses.map(w => (
-                    <option key={w.id} value={w.id}>{w.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">طريقة السداد</label>
-                <select
-                  value={invPaymentMethod}
-                  onChange={(e) => setInvPaymentMethod(e.target.value as any)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                >
-                  <option value="cash">نقداً (سداد فوري كاش)</option>
-                  <option value="credit">آجل (على الحساب بالذمة)</option>
-                  <option value="bank">حوالة بنكية</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Van sale: bill against a rep's stock-in-hand instead of the warehouse */}
-            <div className="mb-6 bg-indigo-50 border border-indigo-200 p-4 rounded">
-              <label className="flex items-center gap-2 text-sm font-bold text-indigo-800 cursor-pointer">
-                <input type="checkbox" checked={vanSale} onChange={(e) => setVanSale(e.target.checked)} />
-                بيع من عهدة مندوب (بيع ميداني) — تُخصم الكمية من عهدة المندوب لا من المخزن
-              </label>
-              {vanSale && (
-                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-gray-600 mb-1">المندوب صاحب العهدة</label>
-                    <select
-                      value={vanRepId}
-                      onChange={(e) => setVanRepId(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                    >
-                      <option value="">-- اختر --</option>
-                      {repUsers.map((u) => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+          <form onSubmit={handleSaveInvoice} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-5">
+              <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-5">
+                <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">فاتورة مبيعات جديدة</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <FormField label="العميل" required>
+                    <EntitySelect
+                      options={customers.map((c) => ({ value: c.id, label: c.name, sub: c.phone || undefined }))}
+                      value={invCustomer} onChange={setInvCustomer} placeholder="اختر العميل"
+                    />
+                  </FormField>
+                  <FormField label="مخزن الصرف" required>
+                    <EntitySelect
+                      options={warehouses.map((w) => ({ value: w.id, label: w.name, sub: (w as any).kind ? enumLabel('warehouseKind', (w as any).kind) : undefined }))}
+                      value={invWarehouse} onChange={setInvWarehouse} placeholder="اختر المخزن" disabled={vanSale}
+                    />
+                  </FormField>
+                  <FormField label="طريقة السداد">
+                    <select value={invPaymentMethod} onChange={(e) => setInvPaymentMethod(e.target.value as any)} className="w-full border rounded-lg py-2 px-3 text-sm bg-white">
+                      <option value="cash">{enumLabel('paymentMethod', 'cash')} (فوري)</option>
+                      <option value="credit">{enumLabel('paymentMethod', 'credit')}</option>
+                      <option value="bank">{enumLabel('paymentMethod', 'bank')}</option>
                     </select>
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {vanBalances.length === 0
-                      ? 'لا توجد بضاعة في عهدة هذا المندوب حالياً.'
-                      : (
-                        <>
-                          <div className="font-bold mb-0.5">رصيد العهدة الحالي:</div>
-                          {vanBalances.map((b) => (
-                            <span key={b.item_id} className="inline-block mr-2">{itemNamesById[b.item_id] || b.item_id}: <span className="font-mono">{b.balance}</span></span>
-                          ))}
-                        </>
-                      )}
-                  </div>
+                  </FormField>
                 </div>
-              )}
-            </div>
 
-            {/* Lines rows */}
-            <div className="space-y-4">
-              <div className="bg-gray-50 border border-dashed border-gray-300 p-3 rounded">
-                <BarcodeScanInput items={items} onResolved={handleScannedItem} onNotFound={handleScanNotFound} />
-              </div>
-
-              <div className="flex justify-between items-center bg-gray-100 p-2 rounded">
-                <span className="text-xs font-bold text-gray-700">بنود الفاتورة:</span>
-                <button
-                  type="button"
-                  onClick={handleAddInvoiceLine}
-                  className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span>إضافة سطر</span>
-                </button>
-              </div>
-
-              {invLines.map((line, idx) => (
-                <div key={idx} className="space-y-1.5">
-                <div className="flex gap-4 items-center">
-                  <div className="flex-1">
-                    <select
-                      required
-                      value={line.item_id}
-                      onChange={(e) => handleLineChange(idx, 'item_id', e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                    >
-                      <option value="">-- اختر الصنف تام الصنع --</option>
-                      {items.map(i => (
-                        <option key={i.id} value={i.id}>{i.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="w-20">
-                    <input
-                      type="number"
-                      required
-                      min="1"
-                      placeholder="الكمية"
-                      value={line.qty}
-                      onChange={(e) => handleLineChange(idx, 'qty', Number(e.target.value))}
-                      className="w-full rounded border border-gray-300 py-1.5 px-2 text-sm text-left font-semibold"
-                    />
-                  </div>
-
-                  <div className="w-28">
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      placeholder="سعر الوحدة"
-                      value={line.unit_price}
-                      onChange={(e) => handleLineChange(idx, 'unit_price', Number(e.target.value))}
-                      className="w-full rounded border border-gray-300 py-1.5 px-2 text-sm text-left font-semibold font-mono"
-                    />
-                  </div>
-
-                  {lineDiscountAllowed && (
-                    <div className="w-24">
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="خصم سطر"
-                        value={line.discount}
-                        onChange={(e) => handleLineChange(idx, 'discount', Number(e.target.value))}
-                        className="w-full rounded border border-gray-300 py-1.5 px-2 text-sm text-left font-mono"
+                <label className="flex items-center gap-2 text-sm font-bold text-indigo-800 cursor-pointer mt-4 bg-indigo-50 border border-indigo-200 p-3 rounded-lg">
+                  <input type="checkbox" checked={vanSale} onChange={(e) => setVanSale(e.target.checked)} />
+                  بيع من عهدة مندوب — الكمية تتخصم من عربية المندوب مش من المخزن
+                </label>
+                {vanSale && (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <FormField label="المندوب صاحب العهدة" required>
+                      <EntitySelect
+                        options={repUsers.map((u) => ({ value: u.id, label: u.name || u.email }))}
+                        value={vanRepId} onChange={setVanRepId} placeholder="اختر المندوب"
                       />
+                    </FormField>
+                    <div className="text-xs text-gray-600 self-end pb-2">
+                      {vanBalances.length === 0
+                        ? 'مفيش بضاعة في عهدة المندوب ده دلوقتي.'
+                        : <><span className="font-bold">رصيد العهدة:</span> {vanBalances.map((b) => <span key={b.item_id} className="inline-block mr-2">{itemNamesById[b.item_id] || b.item_id}: <span className="font-mono">{b.balance}</span></span>)}</>}
                     </div>
-                  )}
+                  </div>
+                )}
+              </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveInvoiceLine(idx)}
-                    className="text-red-500 hover:text-red-700 p-1.5"
-                  >
-                    <Trash2 className="h-4 w-4" />
+              <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-5">
+                <div className="bg-gray-50 border border-dashed border-gray-300 p-3 rounded-lg mb-3">
+                  <BarcodeScanInput items={items} onResolved={handleScannedItem} onNotFound={handleScanNotFound} />
+                </div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-xs font-bold text-gray-700">بنود الفاتورة</span>
+                  <button type="button" onClick={handleAddInvoiceLine} className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                    <Plus className="h-3.5 w-3.5" /> إضافة سطر
                   </button>
                 </div>
-                  {line.item_id && getPackagingBomFor(line.item_id).length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 pr-1">
-                      <Boxes className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                      <span className="font-bold">مكونات التعبئة لكل وحدة:</span>
-                      {getPackagingBomFor(line.item_id).map((r) => (
-                        <span key={r.id} className="bg-gray-100 rounded px-2 py-0.5">
-                          {itemNamesById[r.component_item_id] || '—'} × {r.quantity_or_percentage}
-                        </span>
-                      ))}
+                <div className="space-y-3">
+                  {invLines.map((line, idx) => (
+                    <div key={idx} className="border rounded-lg p-2 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_5rem_7rem_6rem_auto] gap-2 sm:items-center">
+                        <EntitySelect
+                          options={items.map((i) => ({ value: i.id, label: i.name }))}
+                          value={line.item_id} onChange={(v) => handleLineChange(idx, 'item_id', v)} placeholder="اختر الصنف"
+                        />
+                        <NumberInput value={line.qty} onChange={(v) => handleLineChange(idx, 'qty', Number(v) || 0)} min={1} placeholder="كمية" />
+                        <MoneyInput value={line.unit_price} onChange={(v) => handleLineChange(idx, 'unit_price', Number(v) || 0)} placeholder="سعر" />
+                        {lineDiscountAllowed
+                          ? <MoneyInput value={line.discount} onChange={(v) => handleLineChange(idx, 'discount', Number(v) || 0)} placeholder="خصم" />
+                          : <div className="hidden sm:block" />}
+                        <button type="button" onClick={() => handleRemoveInvoiceLine(idx)} className="text-red-500 hover:text-red-700 p-2 justify-self-start sm:justify-self-center">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      {line.item_id && getPackagingBomFor(line.item_id).length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500 pr-1">
+                          <Boxes className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                          <span className="font-bold">مكونات التعبئة للوحدة:</span>
+                          {getPackagingBomFor(line.item_id).map((r) => (
+                            <span key={r.id} className="bg-gray-100 rounded px-2 py-0.5">{itemNamesById[r.component_item_id] || '—'} × {r.quantity_or_percentage}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
-          </CardAnimation>
 
-          {/* Invoice Summary and Submit */}
-          <CardAnimation delay={0.2} className="bg-white p-5 rounded-lg border shadow h-fit space-y-6">
-            <h3 className="font-bold text-gray-800 border-b pb-2">ملخص الحساب والفاتورة</h3>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between text-gray-600">
-                <span>المجموع الفرعي:</span>
+            <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-5 h-fit space-y-4">
+              <h3 className="text-sm font-bold text-gray-800 border-b pb-2">ملخص الفاتورة</h3>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>المجموع قبل الخصم</span>
                 <span className="font-mono font-bold">{formatCurrency(calculateInvoiceSubtotal())}</span>
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-500 mb-1">خصم كلي على الفاتورة (ج.م)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={invDiscount}
-                  onChange={(e) => setInvDiscount(e.target.value)}
-                  className="w-full rounded border py-1.5 px-3 text-sm text-left font-mono bg-gray-50 focus:bg-white"
-                />
-              </div>
-
+              <FormField label="خصم على إجمالي الفاتورة">
+                <MoneyInput value={invDiscount === '' || invDiscount === '0' ? '' : Number(invDiscount)} onChange={(v) => setInvDiscount(v === '' ? '0' : String(v))} />
+              </FormField>
               {vatEnabled && (
-                <div className="flex justify-between text-gray-600 border-t pt-2">
-                  <span>الضريبة ({vatPct}%):</span>
-                  <span className="font-mono font-bold text-yellow-600">{formatCurrency(calculateInvoiceTax(calculateInvoiceSubtotal()))}</span>
+                <div className="flex justify-between text-sm text-gray-600 border-t pt-2">
+                  <span>الضريبة ({vatPct}%)</span>
+                  <span className="font-mono font-bold text-amber-600">{formatCurrency(calculateInvoiceTax(calculateInvoiceSubtotal()))}</span>
                 </div>
               )}
-
-              <div className="flex justify-between text-lg font-bold text-gray-900 border-t pt-3">
-                <span>المجموع النهائي:</span>
+              <div className="flex justify-between text-base font-bold text-gray-900 border-t pt-3">
+                <span>الإجمالي</span>
                 <span className="font-mono text-blue-600">{formatCurrency(calculateInvoiceTotal())}</span>
               </div>
+              <button type="submit" className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm transition">
+                حفظ واعتماد الفاتورة
+              </button>
             </div>
-
-            <motion.button
-              type="submit"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              className="w-full flex justify-center py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-bold text-sm transition shadow-md"
-            >
-              حفظ واعتماد الفاتورة (Save)
-            </motion.button>
-          </CardAnimation>
           </form>
-        </TabContentAnimation>
+        </div>
       )}
 
       {activeSubTab === 'vouchers' && (
