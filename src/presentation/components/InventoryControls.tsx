@@ -252,7 +252,16 @@ export const InventoryControls: React.FC = () => {
       {subTab === 'qc' && (
         <div className="bg-white p-5 rounded-lg border shadow">
           <h3 className="font-bold text-gray-800 border-b pb-2 mb-4">دفعات بانتظار فحص الجودة</h3>
-          {pendingQcBatches.length === 0 ? <p className="text-gray-400 text-sm">لا توجد دفعات بانتظار الفحص.</p> : (
+          {pendingQcBatches.length === 0 ? (
+            <p className="text-gray-400 text-sm">
+              لا توجد دفعات بانتظار الفحص.
+              {allBatches.some((b) => b.status === 'draft') && (
+                <span className="block mt-1 text-amber-700">
+                  في دفعات لسه متسجلش إنتاجها الفعلي — سجّلها الأول من «التصنيع ← تسجيل الإنتاج الفعلي».
+                </span>
+              )}
+            </p>
+          ) : (
             <div className="space-y-2">
               {pendingQcBatches.map((b) => (
                 <div key={b.id} className="border rounded p-3 flex items-center justify-between gap-3">

@@ -5,6 +5,7 @@ import { Auth } from './presentation/components/Auth';
 import { PendingApproval } from './presentation/components/PendingApproval';
 import { CRMClientPortal } from './presentation/components/CRMClientPortal';
 import { ToastProvider } from './presentation/components/ui/Toast';
+import { ConfirmProvider } from './presentation/components/ui/ConfirmDialog';
 import { subscribeToSync } from './infrastructure/sync/sync-service';
 import { db, type OfflineQueueItem } from './infrastructure/database/dexie';
 import { useLocationTracking } from './application/hooks/use-location-tracking';
@@ -411,9 +412,11 @@ function ERPAppContent() {
 function App() {
   return (
     <ToastProvider>
-      <AuthProvider>
-        <ERPAppContent />
-      </AuthProvider>
+      <ConfirmProvider>
+        <AuthProvider>
+          <ERPAppContent />
+        </AuthProvider>
+      </ConfirmProvider>
     </ToastProvider>
   );
 }

@@ -130,7 +130,7 @@ export const ProductionRequests: React.FC = () => {
     setLoading(true);
     try {
       await manufacturingService.startProductionFromRequest(requestId, qty);
-      success('تم بدء أمر الإنتاج — أكمله من تبويب أوامر الإنتاج بإدخال الكمية الفعلية');
+      success('اتبدأت الدفعة — روح لتبويب «تسجيل الإنتاج الفعلي» واكتب الكمية اللي طلعت');
       await loadData();
     } catch (e) {
       error(getErrorMessage(e, 'فشل بدء الإنتاج'));
