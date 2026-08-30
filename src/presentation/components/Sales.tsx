@@ -15,7 +15,9 @@ import { Warehouse } from '../../core/domain/entities';
 import { PaginationParams, EntityFilter } from '../../core/types';
 import { BarcodeScanInput, type ScannableItem } from './BarcodeScanInput';
 import { useToast } from './ui/Toast';
-import { FormField } from './ui/ValidationMessage';
+import { PageHeader } from './ui/PageHeader';
+import { Tabs } from './ui/Tabs';
+import { SalesCustomers } from './SalesCustomers';
 import { CardAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
 import {
   Users,
@@ -24,11 +26,7 @@ import {
   FileText,
   Receipt,
   TrendingUp,
-  Boxes,
-  Share2,
-  Copy,
-  Check,
-  MessageCircle
+  Boxes
 } from 'lucide-react';
 
 // Stable references (not recreated per render) so the data hooks below don't
@@ -39,22 +37,13 @@ const PACKAGING_RECIPE_FILTER: EntityFilter = { recipe_type: 'packaging' };
 
 export const Sales: React.FC = () => {
   const { success, error, warning } = useToast();
-  const { profile, checkPermission } = useAuth();
-  // A customer created by anyone other than an admin (settings:edit) starts
-  // 'pending' until an admin assigns it to a branch and approves it — a
-  // sales rep can still record the customer immediately, they just can't
-  // self-approve/self-assign a branch (enforced server-side too, see
-  // enforce_admin_only_customer_branch).
-  const isAdminActor = profile?.role_name === 'Master Admin' || checkPermission('settings', 'edit');
+  const { profile } = useAuth();
 
   // Tabs
   const [activeSubTab, setActiveSubTab] = useState<'customers' | 'invoices' | 'vouchers' | 'statement'>('invoices');
-  
-  // Client ID sharing state
-  const [copiedClientId, setCopiedClientId] = useState<string | null>(null);
 
   // Data, sourced from the service/hook layer instead of Dexie directly.
-  const { customers: customersResult, createCustomer, approveCustomer, setCustomerPortalPin } = useCustomers();
+  const { customers: customersResult } = useCustomers();
   const customers = customersResult.data;
 
   const { invoices: salesInvoicesResult, createInvoice } = useSalesInvoices(undefined, UNPAGINATED);
@@ -83,15 +72,7 @@ export const Sales: React.FC = () => {
     RepositoryFactory.getWarehouseRepository().findActive().then(setWarehouses);
   }, []);
 
-  // 1. Customer State
-  const [custName, setCustName] = useState('');
-  const [custEmail, setCustEmail] = useState('');
-  const [custPhone, setCustPhone] = useState('');
-  const [custAddress, setCustAddress] = useState('');
-  const [custOpening, setCustOpening] = useState('0');
-  const [createdCustomerWithCrm, setCreatedCustomerWithCrm] = useState<any>(null);
-
-  // 2. Invoice State
+  // Invoice State
   const [invCustomer, setInvCustomer] = useState('');
   const [invWarehouse, setInvWarehouse] = useState('');
   const [invPaymentMethod, setInvPaymentMethod] = useState<'cash' | 'credit' | 'bank'>('cash');
@@ -174,94 +155,9 @@ export const Sales: React.FC = () => {
     })();
   }, []);
 
-  // Add Customer
-  const handleAddCustomer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!custName.trim()) {
-      error('يرجى إدخال اسم العميل');
-      return;
-    }
-
-    try {
-      const result = await createCustomer({
-        name: custName.trim(),
-        email: custEmail.trim() || undefined,
-        phone: custPhone.trim() || undefined,
-        address: custAddress.trim() || undefined,
-        opening_balance: Number(custOpening),
-        approval_status: isAdminActor ? 'approved' : 'pending'
-      });
-      
-      setCustName('');
-      setCustEmail('');
-      setCustPhone('');
-      setCustAddress('');
-      setCustOpening('0');
-      
-      // Show the customer with CRM credentials
-      setCreatedCustomerWithCrm(result);
-      
-      // Show success message
-      if (result && result.client_id) {
-        success(`تم تسجيل العميل بنجاح! معرف العميل: ${result.client_id}`);
-      } else {
-        success('تم تسجيل العميل بنجاح!');
-      }
-    } catch (e) {
-      error(getErrorMessage(e, 'فشل تسجيل العميل'));
-    }
-  };
-
-  // Branch picked in the pending-customer-approval dropdown, keyed by customer id.
-  const [approvalWarehouse, setApprovalWarehouse] = useState<{ [customerId: string]: string }>({});
-
-  // Client-portal PIN being set, keyed by customer id (null = not editing).
-  const [editingPinFor, setEditingPinFor] = useState<string | null>(null);
-  const [pinValue, setPinValue] = useState('');
-
-  const handleSetPin = async (customerId: string) => {
-    if (!/^\d{4,6}$/.test(pinValue)) {
-      error('يجب أن يكون الرقم السري من 4 إلى 6 أرقام');
-      return;
-    }
-    try {
-      await setCustomerPortalPin(customerId, pinValue);
-      success('تم تعيين الرقم السري لبوابة العميل بنجاح');
-      setEditingPinFor(null);
-      setPinValue('');
-    } catch (e) {
-      error(getErrorMessage(e, 'فشل تعيين الرقم السري'));
-    }
-  };
-
-  const handleApproveCustomer = async (customerId: string) => {
-    const warehouseId = approvalWarehouse[customerId] || warehouses[0]?.id;
-    if (!warehouseId) {
-      error('يرجى إضافة فرع (مخزن) أولاً من شاشة المخزون قبل اعتماد العميل');
-      return;
-    }
-    try {
-      await approveCustomer(customerId, warehouseId);
-      success('تم اعتماد العميل وتعيين الفرع بنجاح');
-    } catch (e) {
-      error(getErrorMessage(e, 'فشل اعتماد العميل'));
-    }
-  };
-
-  // Copy client ID to clipboard
-  const copyClientId = (clientId: string) => {
-    navigator.clipboard.writeText(clientId);
-    setCopiedClientId(clientId);
-    setTimeout(() => setCopiedClientId(null), 2000);
-    success('تم نسخ معرف العميل');
-  };
-
-  // Share client ID on WhatsApp
-  const shareClientIdOnWhatsApp = (clientId: string, customerName: string) => {
-    const message = `مرحباً ${customerName}،\n\nتم إنشاء حسابك في بوابة العملاء بنجاح!\n\n🔐 معرف العميل (Client ID): ${clientId}\n\nاستخدم هذا المعرف فقط لتسجيل الدخول إلى بوابة العملاء. لا حاجة لكلمة مرور.\n\nيمكنك الدخول من خلال الرابط: ${window.location.origin}`;
-    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
-  };
+  // Customers are managed in the <SalesCustomers/> document (ERPNext-style
+  // List → Form); this screen only reads the list for the invoice / voucher
+  // / statement pickers.
 
   // Live Invoice Subtotals
   const calculateInvoiceSubtotal = () => {
@@ -500,353 +396,26 @@ export const Sales: React.FC = () => {
       className="p-6 max-w-7xl mx-auto"
       dir="rtl"
     >
-      <div className="mb-6 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">المبيعات والعملاء والسندات / Sales</h1>
-          <p className="text-gray-500 text-sm mt-1">إنشاء الفواتير والضرائب تلقائياً، مرتجع مبيعات، سند قبض، كشف حساب جاري</p>
-        </div>
-      </div>
+      <PageHeader
+        title="المبيعات والعملاء"
+        subtitle="الفواتير والضريبة بتتحسب تلقائي، إيصالات استلام الفلوس، وكشف حساب العميل."
+      />
 
-      {/* Navigation tabs */}
-      <div className="flex border-b border-gray-200 mb-6 bg-white rounded-lg p-1 shadow-sm flex-wrap">
-        <motion.button
-          onClick={() => setActiveSubTab('invoices')}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
-            activeSubTab === 'invoices' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <FileText className="h-4 w-4" />
-          <span>فاتورة مبيعات جديدة</span>
-        </motion.button>
-        <motion.button
-          onClick={() => setActiveSubTab('vouchers')}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
-            activeSubTab === 'vouchers' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Receipt className="h-4 w-4" />
-          <span>سند قبض مالي (سند قبض)</span>
-        </motion.button>
-        <motion.button
-          onClick={() => setActiveSubTab('customers')}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
-            activeSubTab === 'customers' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Users className="h-4 w-4" />
-          <span>قائمة وملفات العملاء</span>
-        </motion.button>
+      <Tabs
+        active={activeSubTab}
+        onChange={(k) => {
+          setActiveSubTab(k as typeof activeSubTab);
+          if (k === 'statement') runCustomerStatement();
+        }}
+        tabs={[
+          { key: 'invoices', label: 'فاتورة مبيعات', icon: FileText },
+          { key: 'vouchers', label: 'إيصال استلام فلوس', icon: Receipt },
+          { key: 'customers', label: 'العملاء', icon: Users },
+          { key: 'statement', label: 'كشف حساب عميل', icon: TrendingUp },
+        ]}
+      />
 
-        <motion.button
-          onClick={() => {
-            setActiveSubTab('statement');
-            runCustomerStatement();
-          }}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-md text-sm font-medium transition ${
-            activeSubTab === 'statement' ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <TrendingUp className="h-4 w-4" />
-          <span>كشف حساب عميل تفصيلي</span>
-        </motion.button>
-      </div>
-
-      {activeSubTab === 'customers' && (
-        <TabContentAnimation>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Customer Add Form */}
-            <CardAnimation delay={0.1}>
-              <div className="bg-white p-5 rounded-lg border shadow h-fit">
-                <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-                  <Users className="h-5 w-5 text-blue-600" />
-                  ملف عميل جديد
-                </h3>
-                <form onSubmit={handleAddCustomer} className="space-y-4">
-                  <FormField
-                    label="اسم العميل / الشركة"
-                    required
-                    helpText="الاسم الظاهر في الفواتير والتقارير"
-                  >
-                    <input
-                      type="text"
-                      required
-                      placeholder="شركة الوفاق لصيانة الإطارات"
-                      value={custName}
-                      onChange={(e) => setCustName(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="البريد الإلكتروني"
-                    helpText="للحفظ التواصل فقط (المصادقة بواسطة client_id)"
-                  >
-                    <input
-                      type="email"
-                      placeholder="client@example.com"
-                      value={custEmail}
-                      onChange={(e) => setCustEmail(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="رقم الهاتف"
-                    helpText="للتواصل والمراسلات"
-                  >
-                    <input
-                      type="text"
-                      placeholder="0512345678"
-                      value={custPhone}
-                      onChange={(e) => setCustPhone(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="العنوان"
-                    helpText="عنوان الفاتورة والتوصيل"
-                  >
-                    <input
-                      type="text"
-                      placeholder="القاهرة، مدينة نصر"
-                      value={custAddress}
-                      onChange={(e) => setCustAddress(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </FormField>
-
-                  <FormField
-                    label="الرصيد الافتتاحي (مدين ج.م)"
-                    helpText="الرصيد الافتتاحي للعميل عند التسجيل"
-                  >
-                    <input
-                      type="number"
-                      value={custOpening}
-                      onChange={(e) => setCustOpening(e.target.value)}
-                      className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </FormField>
-
-                  <motion.button
-                    type="submit"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full flex justify-center py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition shadow-md"
-                  >
-                    حفظ العميل
-                  </motion.button>
-                </form>
-
-                {/* Client ID Display */}
-                {createdCustomerWithCrm && (
-                  <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Check className="h-5 w-5 text-green-600" />
-                      <span className="font-bold text-green-800">تم إنشاء العميل بنجاح!</span>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-bold text-gray-600 mb-1">معرف العميل (Client ID)</label>
-                        <div className="flex items-center gap-2">
-                          <code className="bg-green-100 text-green-800 px-3 py-2 rounded text-sm font-mono flex-1">
-                            {createdCustomerWithCrm.client_id}
-                          </code>
-                          <motion.button
-                            onClick={() => copyClientId(createdCustomerWithCrm.client_id)}
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            className="text-gray-400 hover:text-gray-600 p-2"
-                            title="نسخ"
-                          >
-                            {copiedClientId === createdCustomerWithCrm.client_id ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                          </motion.button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-2 mt-4">
-                      <motion.button
-                        onClick={() => shareClientIdOnWhatsApp(createdCustomerWithCrm.client_id, createdCustomerWithCrm.name)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-xs transition shadow-md"
-                      >
-                        <MessageCircle className="h-4 w-4" />
-                        مشاركة معرف العميل
-                      </motion.button>
-                      
-                      <motion.button
-                        onClick={() => setCreatedCustomerWithCrm(null)}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-bold text-xs transition"
-                      >
-                        إغلاق
-                      </motion.button>
-                    </div>
-
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mt-3">
-                      <p className="text-xs text-blue-800">
-                        <strong>ملاحظة:</strong> يرجى مشاركة معرف العميل مع العميل. العميل سيستخدم هذا المعرف فقط لتسجيل الدخول إلى بوابة العملاء. لا حاجة لكلمة مرور.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardAnimation>
-
-          {/* Customers List */}
-          <CardAnimation delay={0.2} className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-              <Users className="h-5 w-5 text-blue-600" />
-              العملاء المسجلين
-              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">{customers.length}</span>
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-right">
-                <thead className="bg-gray-50">
-                  <tr className="text-xs font-bold text-gray-500">
-                    <th className="py-3 px-4">الاسم</th>
-                    <th className="py-3 px-4">معرف العميل</th>
-                    <th className="py-3 px-4">الهاتف</th>
-                    <th className="py-3 px-4">العنوان</th>
-                    <th className="py-3 px-4 text-center">الرصيد الجاري</th>
-                    <th className="py-3 px-4 text-center">الفرع</th>
-                    <th className="py-3 px-4 text-center">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {customers.map((c, index) => (
-                    <motion.tr
-                      key={c.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: index * 0.05, ease: 'easeOut' }}
-                      className="hover:bg-blue-50 transition-colors cursor-pointer"
-                    >
-                      <td className="py-3 px-4 font-bold text-gray-800">{c.name}</td>
-                      <td className="py-3 px-4">
-                        {c.client_id ? (
-                          <div className="flex items-center gap-2">
-                            <code className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-mono">
-                              {c.client_id}
-                            </code>
-                            <div className="flex gap-1">
-                              <motion.button
-                                onClick={() => copyClientId(c.client_id!)}
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
-                                className="text-gray-400 hover:text-gray-600 p-1"
-                                title="نسخ"
-                              >
-                                {copiedClientId === c.client_id ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
-                              </motion.button>
-                              <motion.button
-                                onClick={() => shareClientIdOnWhatsApp(c.client_id!, c.name)}
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
-                                className="text-gray-400 hover:text-green-600 p-1"
-                                title="مشاركة على واتساب"
-                              >
-                                <Share2 className="h-3 w-3" />
-                              </motion.button>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">غير متوفر</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-gray-600">{c.phone || '-'}</td>
-                      <td className="py-3 px-4 text-gray-600">{c.address || '-'}</td>
-                      <td className="py-3 px-4 text-center font-bold text-blue-600 font-mono">
-                        {formatCurrency(
-                          Number(c.opening_balance) +
-                          salesInvoices.filter((i) => i.customer_id === c.id).reduce((sum, i) => sum + Number(i.total), 0) -
-                          receiptVouchers.filter((v) => v.customer_id === c.id).reduce((sum, v) => sum + Number(v.amount), 0)
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {c.approval_status === 'pending' ? (
-                          isAdminActor ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <select
-                                value={approvalWarehouse[c.id] || warehouses[0]?.id || ''}
-                                onChange={(e) => setApprovalWarehouse({ ...approvalWarehouse, [c.id]: e.target.value })}
-                                className="border rounded text-xs py-1 px-1"
-                              >
-                                {warehouses.map(w => (
-                                  <option key={w.id} value={w.id}>{w.name}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => handleApproveCustomer(c.id)}
-                                className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200"
-                              >
-                                موافقة
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">بانتظار الموافقة</span>
-                          )
-                        ) : (
-                          <span className="text-xs text-gray-600">
-                            {warehouses.find(w => w.id === c.warehouse_id)?.name || '-'}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <motion.button
-                            whileHover={{ scale: 1.1 }}
-                            whileTap={{ scale: 0.9 }}
-                            className="text-blue-600 hover:text-blue-800 p-1"
-                            title="تفاصيل العميل"
-                          >
-                            <FileText className="h-4 w-4" />
-                          </motion.button>
-                          {editingPinFor === c.id ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="text"
-                                value={pinValue}
-                                onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))}
-                                maxLength={6}
-                                placeholder="PIN"
-                                className="border rounded p-1 w-16 text-xs"
-                              />
-                              <button onClick={() => handleSetPin(c.id)} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">حفظ</button>
-                              <button onClick={() => { setEditingPinFor(null); setPinValue(''); }} className="text-xs text-gray-400">×</button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setEditingPinFor(c.id); setPinValue(''); }}
-                              className="text-xs text-purple-600 hover:underline"
-                              title="تعيين رقم سري لبوابة العميل"
-                            >
-                              PIN
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardAnimation>
-        </div>
-        </TabContentAnimation>
-      )}
+      {activeSubTab === 'customers' && <SalesCustomers />}
 
       {activeSubTab === 'invoices' && (
         <TabContentAnimation>
