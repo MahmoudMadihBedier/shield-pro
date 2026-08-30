@@ -25,7 +25,6 @@ import { NumberInput, MoneyInput } from './ui/NumberInput';
 import { StatusBadge } from './ui/StatusBadge';
 import { enumLabel } from '../../shared/i18n/labels';
 import { SalesCustomers } from './SalesCustomers';
-import { CardAnimation, TabContentAnimation } from './ui/animations/CardAnimation';
 import {
   Users,
   Plus,
@@ -379,9 +378,15 @@ export const Sales: React.FC = () => {
   const handleSaveReceiptVoucher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!vouchCustomer || !vouchAmount || !vouchAccountId) {
-      error('يرجى تعبئة جميع الحقول المطلوبة');
+      error('اكتب العميل والمبلغ والحساب');
       return;
     }
+
+    if (!(await confirm({
+      title: 'تسجيل استلام الفلوس؟',
+      message: `مبلغ ${formatCurrency(Number(vouchAmount))} هيتسجّل في الحساب وحساب العميل هيتعدّل — مش هينفع تتراجع.`,
+      confirmText: 'تسجيل',
+    }))) return;
 
     try {
       await createReceiptVoucher({
@@ -568,229 +573,110 @@ export const Sales: React.FC = () => {
       )}
 
       {activeSubTab === 'vouchers' && (
-        <TabContentAnimation>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Create receipt voucher */}
-            <CardAnimation delay={0.1} className="bg-white p-5 rounded-lg border shadow h-fit">
-              <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-                <Receipt className="h-5 w-5 text-blue-600" />
-                إنشاء سند قبض مالي جديد
-              </h3>
-            <form onSubmit={handleSaveReceiptVoucher} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">العميل الدافع</label>
-                <select
-                  required
-                  value={vouchCustomer}
-                  onChange={(e) => setVouchCustomer(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
-                >
-                  {customers.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.client_id ? `(${c.client_id})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <div className="space-y-6">
+          <DocList
+            rows={receiptVouchers}
+            columns={[
+              { key: 'no', label: 'رقم الإيصال', primary: true, render: (v: any) => String(v.voucher_no).startsWith('PENDING-') ? 'قيد الحفظ' : v.voucher_no },
+              { key: 'customer', label: 'العميل', render: (v: any) => customers.find((c) => c.id === v.customer_id)?.name || '—' },
+              { key: 'amount', label: 'المبلغ', render: (v: any) => <span className="font-mono text-green-700">{formatCurrency(Number(v.amount))}</span> },
+              { key: 'account', label: 'دخل حساب', hideOnCard: true, render: (v: any) => accounts.find((a) => a.id === v.account_id)?.name || '—' },
+              { key: 'date', label: 'التاريخ', hideOnCard: true, render: (v: any) => v.date ? formatDate(v.date) : '—' },
+            ]}
+            getId={(v: any) => v.id}
+            search={(v: any, q) => (String(v.voucher_no) + ' ' + (customers.find((c) => c.id === v.customer_id)?.name || '')).toLowerCase().includes(q.toLowerCase())}
+            emptyTitle="لسه مفيش إيصالات استلام فلوس"
+            emptyHint="سجّل أول إيصال من الفورم اللي تحت."
+          />
 
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">مربوط بفاتورة مبيعات معلقة (اختياري / جزئي)</label>
-                <select
-                  value={vouchInvoiceId}
-                  onChange={(e) => setVouchInvoiceId(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                >
-                  <option value="">-- دفعة على الحساب العام --</option>
-                  {salesInvoices
-                    .filter((i) => i.customer_id === vouchCustomer && i.status !== 'paid')
-                    .map((i) => (
-                      <option key={i.id} value={i.id}>{i.invoice_no} (المتبقي: {i.total} ج.م)</option>
-                    ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">الحساب المستلم (صندوق كاش أو بنك)</label>
-                <select
-                  required
-                  value={vouchAccountId}
-                  onChange={(e) => setVouchAccountId(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white"
-                >
-                  {accounts.filter((a) => a.category === 'cash' || a.category === 'bank').map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">المبلغ المقبوض (ج.م)</label>
-                <input
-                  type="number"
-                  min="1"
-                  step="0.01"
-                  required
-                  value={vouchAmount}
-                  onChange={(e) => setVouchAmount(e.target.value)}
-                  className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left font-mono font-semibold"
+          <form onSubmit={handleSaveReceiptVoucher} className="bg-white rounded-lg border shadow-sm p-4 sm:p-5">
+            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">إيصال استلام فلوس جديد</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField label="العميل الدافع" required>
+                <EntitySelect
+                  options={customers.map((c) => ({ value: c.id, label: c.name, sub: c.phone || undefined }))}
+                  value={vouchCustomer} onChange={setVouchCustomer} placeholder="اختر العميل"
                 />
-              </div>
-
-              <motion.button
-                type="submit"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="w-full flex justify-center py-2 bg-green-600 hover:bg-green-700 text-white rounded font-bold text-xs transition shadow-md"
-              >
-                توليد واعتماد سند القبض
-              </motion.button>
-            </form>
-          </CardAnimation>
-
-          {/* Receipt Vouchers List */}
-          <CardAnimation delay={0.2} className="lg:col-span-2 bg-white p-5 rounded-lg border shadow">
-            <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-green-600" />
-              سجل السندات المالية الصادرة
-              <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">{receiptVouchers.length}</span>
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-right">
-                <thead className="bg-gray-50">
-                  <tr className="text-xs font-bold text-gray-500">
-                    <th className="py-3 px-4">رقم السند</th>
-                    <th className="py-3 px-4">العميل</th>
-                    <th className="py-3 px-4 text-center">المبلغ</th>
-                    <th className="py-3 px-4">الحساب المستلم</th>
-                    <th className="py-3 px-4">التاريخ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {receiptVouchers.map((v, index) => {
-                    const cName = customers.find(c => c.id === v.customer_id)?.name || '';
-                    const accName = accounts.find(a => a.id === v.account_id)?.name || '';
-                    return (
-                      <motion.tr
-                        key={v.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.05, ease: 'easeOut' }}
-                        className="hover:bg-green-50 transition-colors cursor-pointer"
-                      >
-                        <td className="py-3 px-4 font-bold text-gray-800">{v.voucher_no}</td>
-                        <td className="py-3 px-4 text-gray-700">{cName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-green-600 font-mono">{formatCurrency(v.amount)}</td>
-                        <td className="py-3 px-4 text-gray-600">{accName}</td>
-                        <td className="py-3 px-4 text-gray-500 text-xs">{v.date ? formatDate(v.date) : '-'}</td>
-                      </motion.tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              </FormField>
+              <FormField label="على فاتورة معيّنة (اختياري)">
+                <select value={vouchInvoiceId} onChange={(e) => setVouchInvoiceId(e.target.value)} className="w-full border rounded-lg py-2 px-3 text-sm bg-white">
+                  <option value="">— دفعة على الحساب العام —</option>
+                  {salesInvoices.filter((i) => i.customer_id === vouchCustomer && i.status !== 'paid').map((i) => (
+                    <option key={i.id} value={i.id}>{i.invoice_no} (الإجمالي {formatCurrency(Number(i.total))})</option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label="الفلوس دخلت فين (صندوق كاش أو بنك)" required>
+                <EntitySelect
+                  options={accounts.filter((a) => a.category === 'cash' || a.category === 'bank').map((a) => ({ value: a.id, label: a.name }))}
+                  value={vouchAccountId} onChange={setVouchAccountId} placeholder="اختر الحساب"
+                />
+              </FormField>
+              <FormField label="المبلغ المستلم" required>
+                <MoneyInput value={vouchAmount === '' || vouchAmount === '0' ? '' : Number(vouchAmount)} onChange={(v) => setVouchAmount(v === '' ? '0' : String(v))} min={1} />
+              </FormField>
             </div>
-          </CardAnimation>
+            <div className="flex justify-end mt-4">
+              <button type="submit" className="py-2.5 px-6 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-sm transition">
+                تسجيل استلام الفلوس
+              </button>
+            </div>
+          </form>
         </div>
-        </TabContentAnimation>
       )}
 
       {activeSubTab === 'statement' && (
-        <TabContentAnimation>
-          <CardAnimation className="bg-white p-6 rounded-lg border shadow">
-            <div className="border-b pb-4 mb-6">
-              <h3 className="font-bold text-gray-800 text-lg flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-blue-600" />
-              <span>كشف حساب عميل تفصيلي (Statement of Account)</span>
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">تتبع الحركات المالية الجارية للعملاء ومطابقة الأرصدة</p>
-          </div>
+        <div className="bg-white rounded-lg border shadow-sm p-4 sm:p-5">
+          <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-1">كشف حساب عميل</h3>
+          <p className="text-xs text-gray-500 mb-4">كل حركات العميل والرصيد الجاري له.</p>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded border">
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">اختر العميل</label>
-              <select
-                value={statementCustId}
-                onChange={(e) => setStatementCustId(e.target.value)}
-                className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm bg-white font-semibold"
-              >
-                {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} {c.client_id ? `(${c.client_id})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">من تاريخ</label>
-              <input
-                type="date"
-                value={statementStart}
-                onChange={(e) => setStatementStartDate(e.target.value)}
-                className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left bg-white"
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-5 bg-gray-50 p-3 rounded-lg border">
+            <FormField label="العميل">
+              <EntitySelect
+                options={customers.map((c) => ({ value: c.id, label: c.name, sub: c.phone || undefined }))}
+                value={statementCustId} onChange={setStatementCustId} placeholder="اختر العميل"
               />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-gray-600 mb-1">إلى تاريخ</label>
-              <input
-                type="date"
-                value={statementEnd}
-                onChange={(e) => setStatementEndDate(e.target.value)}
-                className="w-full rounded border border-gray-300 py-1.5 px-3 text-sm text-left bg-white"
-              />
-            </div>
-
+            </FormField>
+            <FormField label="من تاريخ">
+              <input type="date" value={statementStart} onChange={(e) => setStatementStartDate(e.target.value)} className="w-full border rounded-lg py-2 px-3 text-sm text-left bg-white" />
+            </FormField>
+            <FormField label="إلى تاريخ">
+              <input type="date" value={statementEnd} onChange={(e) => setStatementEndDate(e.target.value)} className="w-full border rounded-lg py-2 px-3 text-sm text-left bg-white" />
+            </FormField>
             <div className="flex items-end">
-              <button
-                type="button"
-                onClick={runCustomerStatement}
-                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs transition"
-              >
-                تحديث وعرض الكشف
+              <button type="button" onClick={runCustomerStatement} className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm transition">
+                عرض الكشف
               </button>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-right">
-              <thead className="bg-gray-50">
-                <tr className="text-xs font-bold text-gray-500">
-                  <th className="py-3 px-4">التاريخ</th>
-                  <th className="py-3 px-4">بيان الحركة / التفاصيل</th>
-                  <th className="py-3 px-4 text-center text-red-600">مدين (Debit - فاتورة)</th>
-                  <th className="py-3 px-4 text-center text-green-600">دائن (Credit - سداد)</th>
-                  <th className="py-3 px-4 text-center text-blue-600 font-bold">الرصيد الجاري المستحق</th>
+            <table className="min-w-full text-sm text-right">
+              <thead className="bg-gray-50 text-xs font-bold text-gray-500">
+                <tr>
+                  <th className="py-2.5 px-3">التاريخ</th>
+                  <th className="py-2.5 px-3">البيان</th>
+                  <th className="py-2.5 px-3 text-center text-red-600">ليك (فاتورة)</th>
+                  <th className="py-2.5 px-3 text-center text-green-600">عليك (سداد)</th>
+                  <th className="py-2.5 px-3 text-center text-blue-600">الرصيد الجاري</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 text-sm">
-                {statementRecords.length > 0 ? (
-                  statementRecords.map((rec, idx) => (
-                    <motion.tr
-                      key={idx}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: idx * 0.05, ease: 'easeOut' }}
-                      className="hover:bg-blue-50 transition-colors cursor-pointer"
-                    >
-                      <td className="py-3 px-4 text-gray-700">{formatDate(rec.date)}</td>
-                      <td className="py-3 px-4 font-semibold text-gray-600">{rec.description}</td>
-                      <td className="py-3 px-4 text-center font-mono font-semibold text-red-600">{rec.debit > 0 ? `+${rec.debit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-semibold text-green-600">{rec.credit > 0 ? `-${rec.credit.toFixed(2)}` : '-'}</td>
-                      <td className="py-3 px-4 text-center font-mono font-bold text-blue-600 bg-blue-50/50">{formatCurrency(rec.balance)}</td>
-                    </motion.tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-500 italic">
-                      انقر على تطبيق الفلتر لعرض كشف حساب العميل الحالي.
-                    </td>
+              <tbody className="divide-y divide-gray-100">
+                {statementRecords.length > 0 ? statementRecords.map((rec, idx) => (
+                  <tr key={idx} className="hover:bg-blue-50/40">
+                    <td className="py-2.5 px-3 text-gray-700">{formatDate(rec.date)}</td>
+                    <td className="py-2.5 px-3 text-gray-600">{rec.description}</td>
+                    <td className="py-2.5 px-3 text-center font-mono text-red-600">{rec.debit > 0 ? formatCurrency(rec.debit) : '—'}</td>
+                    <td className="py-2.5 px-3 text-center font-mono text-green-600">{rec.credit > 0 ? formatCurrency(rec.credit) : '—'}</td>
+                    <td className="py-2.5 px-3 text-center font-mono font-bold text-blue-600 bg-blue-50/40">{formatCurrency(rec.balance)}</td>
                   </tr>
+                )) : (
+                  <tr><td colSpan={5} className="py-8 text-center text-gray-400 text-sm">اختر عميل واضغط «عرض الكشف».</td></tr>
                 )}
               </tbody>
             </table>
           </div>
-        </CardAnimation>
-        </TabContentAnimation>
+        </div>
       )}
     </motion.div>
   );
