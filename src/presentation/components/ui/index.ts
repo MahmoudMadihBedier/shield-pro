@@ -16,6 +16,12 @@ export { Tabs } from './Tabs';
 export type { TabDef } from './Tabs';
 export { PageHeader } from './PageHeader';
 export { StatCard } from './StatCard';
+export { DocList } from './DocList';
+export type { DocColumn } from './DocList';
+export { DocForm } from './DocForm';
+export { NumberInput, MoneyInput, QtyInput } from './NumberInput';
+export { EntitySelect } from './EntitySelect';
+export type { EntityOption } from './EntitySelect';
 
 // Animation Components
 export {
